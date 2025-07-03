@@ -4,11 +4,13 @@
 // Declarations and Globals
 // -------------------------------------------------------------------------- //
 
-#define NUM_LAYERS 2
+#define NUM_LAYERS 4
 
 enum layer_names {
     _BASE,
+    _PROGRAMING,
     _GIT,
+    _MARKDOWN,
 };
 
 int curr_layer = _BASE;
@@ -40,6 +42,32 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 }
 
 
+bool oled_task_user(void) {
+    oled_write_ln("Hello, world!", false);
+
+    switch (curr_layer) {
+        case _BASE:
+            oled_write_ln("Home Layer", false);
+            break;
+        
+        case _PROGRAMING:
+            oled_write_ln("Programming Layer", false);
+            break;
+    
+        case _GIT:
+            oled_write_ln("Git Layer", false);
+            break;
+    
+        case _MARKDOWN:
+            oled_write_ln("Markdown Layer", false);
+            break;
+        
+    }
+    
+    return false;
+}
+
+
 // -------------------------------------------------------------------------- //
 // Macropad Layout
 // -------------------------------------------------------------------------- //
@@ -51,11 +79,24 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_A, KC_B, KC_C
     ),
 
+    
+    [_PROGRAMING] = LAYOUT(
+                           KC_MEDIA_PLAY_PAUSE,
+            CYCLE_LAYERS,
+        KC_D, KC_E, KC_F
+    ),
+
     [_GIT] = LAYOUT(
                            KC_MEDIA_PLAY_PAUSE,
             CYCLE_LAYERS,
         KC_D, KC_E, KC_F
     ),
+
+    [_MARKDOWN] = LAYOUT(
+                           KC_MEDIA_PLAY_PAUSE,
+            CYCLE_LAYERS,
+        KC_D, KC_E, KC_F
+    ),    
 };
 
 const uint16_t PROGMEM backlight_combo[] = {KC_UP, KC_DOWN, COMBO_END};
