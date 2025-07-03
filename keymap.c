@@ -18,13 +18,55 @@ int curr_layer = _BASE;
 
 enum custom_keycodes {
     CYCLE_LAYERS = SAFE_RANGE,
+    GIT_COMMIT_ALL,
+    GIT_COMMIT_TRACKED,
 };
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record);
 
 
 // -------------------------------------------------------------------------- //
-// Functions
+// Helper Functions
+// -------------------------------------------------------------------------- //
+
+void handleGitCommitAll(keyrecord_t *record) {
+
+    // go to vscode terminal
+    if (record->event.pressed) {
+        tap_code16(LCTL(KC_PGUP));
+    }
+
+    // type the commit (with implicit add)
+    send_string("git add . && git commit -m \"\"");
+    tap_code(KC_LEFT);
+
+}
+
+void handleGitCommitTracked(keyrecord_t *record) {
+    
+    // go to vscode terminal
+    if (record->event.pressed) {
+        tap_code16(LCTL(KC_PGUP));
+    }
+
+    // type the commit (with implicit add)
+    send_string("git commit -am \"\"");
+    tap_code(KC_LEFT);
+    
+}
+
+void handleGitCommit(keyrecord_t *record, bool commitUntrackedOnly) {
+    if (commitUntrackedOnly) {
+        handleGitCommitTracked(record);
+    } else {
+        handleGitCommitAll(record);
+    }
+}
+
+
+
+// -------------------------------------------------------------------------- //
+// Override Functions
 // -------------------------------------------------------------------------- //
 
 
@@ -37,14 +79,19 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
+
+        case GIT_COMMIT_ALL:
+            handleGitCommit(record, true);
+
+        case GIT_COMMIT_TRACKED:
+            handleGitCommit(record, false);
     }
+
     return true;
 }
 
 
 bool oled_task_user(void) {
-    oled_write_ln("Hello, world!", false);
-
     switch (curr_layer) {
         case _BASE:
             oled_write_ln("Home Layer", false);
@@ -89,7 +136,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_GIT] = LAYOUT(
                            KC_MEDIA_PLAY_PAUSE,
             CYCLE_LAYERS,
-        KC_D, KC_E, KC_F
+        GIT_COMMIT_ALL, GIT_COMMIT_TRACKED, KC_F
     ),
 
     [_MARKDOWN] = LAYOUT(
