@@ -1,5 +1,6 @@
 import sys
 import hid
+import psutil # <-- Import the new library
 
 vendor_id     = 0xFEED
 product_id    = 0x9A25
@@ -37,14 +38,20 @@ def send_raw_report(data):
     try:
         interface.write(request_report)
 
-        response_report = interface.read(report_length)
+        # response_report = interface.read(report_length)
 
-        print("Response:")
-        print(response_report)
+        # print("Response:")
+        # print(response_report)
     finally:
         interface.close()
 
 if __name__ == '__main__':
-    send_raw_report([
-        0x41
-    ])
+    # Get the current system-wide RAM usage percentage
+    ram_percent = psutil.virtual_memory().percent
+
+    # Convert the float value to a string
+    message = str(ram_percent)
+    
+    # Convert the string to a sequence of bytes and send it
+    data_to_send = message.encode('utf-8')
+    send_raw_report(data_to_send)

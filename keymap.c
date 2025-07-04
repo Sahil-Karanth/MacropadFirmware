@@ -136,29 +136,27 @@ void handleNameCaseChange(keyrecord_t *record) {
 // -------------------------------------------------------------------------- //
 
 
-// void raw_hid_receive(uint8_t *data, uint8_t length) {
-//     // Debug print
-//     dprintf("HID: received %d bytes\n", length);
-    
-//     if (length >= HID_BUFFER_SIZE) {
-//         length = HID_BUFFER_SIZE - 1;
-//     }
-    
-//     memcpy(received_data, data, length);
-//     received_data[length] = '\0';
-    
-//     oled_write_ln("got something!", false);
-// }
-
 void raw_hid_receive(uint8_t *data, uint8_t length) {
-    uint8_t response[length];
-    memset(response, 0, length);
-    response[0] = 'B';
-
-    if(data[0] == 'A') {
-        raw_hid_send(response, length);
+    
+    if (length >= HID_BUFFER_SIZE) {
+        length = HID_BUFFER_SIZE - 1;
     }
+    
+    memcpy(received_data, data, length);
+    received_data[length] = '\0';
+    
+    oled_write_ln("got something!", false);
 }
+
+// void raw_hid_receive(uint8_t *data, uint8_t length) {
+//     uint8_t response[length];
+//     memset(response, 0, length);
+//     response[0] = 'B';
+
+//     if(data[0] == 'A') {
+//         raw_hid_send(response, length);
+//     }
+// }
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
