@@ -18,25 +18,39 @@ int curr_layer = _BASE;
 
 
 enum custom_keycodes {
-    CYCLE_LAYERS = SAFE_RANGE,
-
-    LOCK_COMPUTER,
+    LOCK_COMPUTER = SAFE_RANGE,
     VSCODE_OPEN,
     EMAIL,
 
     COMMENT_SEPARATOR,
+    DOXYGEN_COMMENT,
+    NAME_CASE_CHANGE,
 
     GIT_COMMIT_ALL,
     GIT_COMMIT_TRACKED,
     GIT_STATUS,
 };
 
-bool process_record_user(uint16_t keycode, keyrecord_t *record);
+enum tap_dance_codes {
+    TD_CYCLE_LAYERS
+};
 
+
+bool process_record_user(uint16_t keycode, keyrecord_t *record);
 
 // -------------------------------------------------------------------------- //
 // Helper Functions
 // -------------------------------------------------------------------------- //
+
+void cycleLayers(tap_dance_state_t *state, void *user_data) {
+    if (state->count == 1) {
+        curr_layer = (curr_layer + 1) % NUM_LAYERS;
+        layer_move(curr_layer);
+    } else if (state->count == 2) {
+        curr_layer = (curr_layer - 1 + NUM_LAYERS) % NUM_LAYERS;
+        layer_move(curr_layer);
+    }
+}
 
 void handleOpenVscode(keyrecord_t *record) {
     if (record->event.pressed) {
@@ -102,13 +116,6 @@ void handleCommentSep(keyrecord_t *record) {
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
-        case CYCLE_LAYERS: {
-            if (record -> event.pressed) {
-                curr_layer = (curr_layer + 1) % NUM_LAYERS;
-                layer_move(curr_layer);
-            }
-            return false;
-        }
 
         case LOCK_COMPUTER: {
             tap_code16(LGUI(KC_L));
@@ -164,6 +171,10 @@ bool oled_task_user(void) {
         
         case _PROGRAMING:
             oled_write_ln("Programming Layer", false);
+            oled_write_ln("\n", false);
+            oled_write_ln("< UNIMPLEMENTED", false);
+            oled_write_ln("v UNIMPLEMENTED", false);
+            oled_write_ln("> UNIMPLEMENTED", false);
             break;
     
         case _GIT:
@@ -176,6 +187,10 @@ bool oled_task_user(void) {
     
         case _MARKDOWN:
             oled_write_ln("Markdown Layer", false);
+            oled_write_ln("\n", false);
+            oled_write_ln("< UNIMPLEMENTED", false);
+            oled_write_ln("v UNIMPLEMENTED", false);
+            oled_write_ln("> UNIMPLEMENTED", false);
             break;
         
     }
@@ -191,28 +206,33 @@ bool oled_task_user(void) {
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_BASE] = LAYOUT(
                            KC_MEDIA_PLAY_PAUSE,
-            CYCLE_LAYERS,
+            TD(TD_CYCLE_LAYERS),
         EMAIL, VSCODE_OPEN, LOCK_COMPUTER
     ),
 
     
     [_PROGRAMING] = LAYOUT(
                            KC_MEDIA_PLAY_PAUSE,
-            CYCLE_LAYERS,
+            TD(TD_CYCLE_LAYERS),
         KC_D, KC_E, KC_F
     ),
 
     [_GIT] = LAYOUT(
                            KC_MEDIA_PLAY_PAUSE,
-            CYCLE_LAYERS,
+            TD(TD_CYCLE_LAYERS),
         GIT_STATUS, GIT_COMMIT_TRACKED, GIT_COMMIT_ALL
     ),
 
     [_MARKDOWN] = LAYOUT(
                            KC_MEDIA_PLAY_PAUSE,
-            CYCLE_LAYERS,
+            TD(TD_CYCLE_LAYERS),
         KC_D, KC_E, KC_F
     ),    
+};
+
+
+tap_dance_action_t tap_dance_actions[] = {
+    [TD_CYCLE_LAYERS] = ACTION_TAP_DANCE_FN(cycleLayers),
 };
 
 const uint16_t PROGMEM backlight_combo[] = {KC_UP, KC_DOWN, COMBO_END};
