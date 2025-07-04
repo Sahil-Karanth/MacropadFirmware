@@ -20,6 +20,10 @@ int curr_layer = _BASE;
 enum custom_keycodes {
     CYCLE_LAYERS = SAFE_RANGE,
 
+    LOCK_COMPUTER,
+    VSCODE_OPEN,
+    EMAIL,
+
     COMMENT_SEPARATOR,
 
     GIT_COMMIT_ALL,
@@ -30,12 +34,18 @@ enum custom_keycodes {
 bool process_record_user(uint16_t keycode, keyrecord_t *record);
 
 
-
-
-
 // -------------------------------------------------------------------------- //
 // Helper Functions
 // -------------------------------------------------------------------------- //
+
+void handleOpenVscode(keyrecord_t *record) {
+    if (record->event.pressed) {
+        tap_code16(LGUI(KC_R));
+        wait_ms(100);
+        send_string("code");
+        tap_code(KC_ENTER);
+    }
+}
 
 void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly) {
     if (record->event.pressed) {
@@ -100,6 +110,23 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             return false;
         }
 
+        case LOCK_COMPUTER: {
+            tap_code16(LGUI(KC_L));
+            return false;
+        }
+
+        case VSCODE_OPEN: {
+            handleOpenVscode(record);
+            return false;
+        }
+
+        case EMAIL: {
+            if (record->event.pressed) {
+                send_string("skkaranth1@gmail.com");
+            }
+            return false;
+        }
+
         case GIT_COMMIT_ALL: {
             handleGitCommit(record, false);
             return false;
@@ -119,7 +146,6 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             handleCommentSep(record);
             return false;
         }
-
     }
 
     return true;
@@ -130,6 +156,10 @@ bool oled_task_user(void) {
     switch (curr_layer) {
         case _BASE:
             oled_write_ln("Home Layer", false);
+            oled_write_ln("\n", false);
+            oled_write_ln("< lock computer", false);
+            oled_write_ln("v open vscode", false);
+            oled_write_ln("> email", false);
             break;
         
         case _PROGRAMING:
@@ -162,7 +192,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_BASE] = LAYOUT(
                            KC_MEDIA_PLAY_PAUSE,
             CYCLE_LAYERS,
-        KC_A, KC_B, KC_C
+        EMAIL, VSCODE_OPEN, LOCK_COMPUTER
     ),
 
     
