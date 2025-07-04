@@ -1,4 +1,5 @@
 #include QMK_KEYBOARD_H
+
 #define KEYMAP_UK
 
 // -------------------------------------------------------------------------- //
@@ -34,7 +35,6 @@ enum custom_keycodes {
 enum tap_dance_codes {
     TD_CYCLE_LAYERS
 };
-
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record);
 
@@ -75,7 +75,7 @@ void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly) {
             send_string(" COMMIT TRACKED ONLY");
         } else {
             send_string("git add . && git commit -m ''          ");
-            tap_code(KC_NUHS); // UK # key
+            tap_code(KC_NUHS);
             send_string(" COMMIT ALL");
         }
 
@@ -108,6 +108,20 @@ void handleCommentSep(keyrecord_t *record) {
 }
 
 
+void handleDoxygenComment(keyrecord_t *record) {
+    if (record->event.pressed) {
+        const char *doxygen_comment =
+            "* @brief BRIEF\n"
+            "*\n"
+            "* DESCR\n"
+            "*\n"
+            "* @param PNAME PDESC\n"
+            "* @return RDESC\n"
+
+        send_string(doxygen_comment);
+    }
+}
+
 
 // -------------------------------------------------------------------------- //
 // Override Functions
@@ -117,16 +131,15 @@ void handleCommentSep(keyrecord_t *record) {
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
 
+        // Home macros
         case LOCK_COMPUTER: {
             tap_code16(LGUI(KC_L));
             return false;
         }
-
         case VSCODE_OPEN: {
             handleOpenVscode(record);
             return false;
         }
-
         case EMAIL: {
             if (record->event.pressed) {
                 send_string("skkaranth1@gmail.com");
@@ -134,25 +147,34 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             return false;
         }
 
+        // Git macros
         case GIT_COMMIT_ALL: {
             handleGitCommit(record, false);
             return false;
         }
-
         case GIT_COMMIT_TRACKED: {
             handleGitCommit(record, true);
             return false;
         }
-        
         case GIT_STATUS: {
             handleGitStatus(record);
             return false;
         }
 
+        // Programming macros
         case COMMENT_SEPARATOR: {
             handleCommentSep(record);
             return false;
         }
+        case DOXYGEN_COMMENT: {
+            handleDoxygenComment(record);
+            return false;
+        }
+        // case COMMENT_SEPARATOR: {
+        //     handleCommentSep(record);
+        //     return false;
+        // }
+
     }
 
     return true;
@@ -172,8 +194,8 @@ bool oled_task_user(void) {
         case _PROGRAMING:
             oled_write_ln("Programming Layer", false);
             oled_write_ln("\n", false);
-            oled_write_ln("< UNIMPLEMENTED", false);
-            oled_write_ln("v UNIMPLEMENTED", false);
+            oled_write_ln("< comment separator", false);
+            oled_write_ln("v doxygen comment", false);
             oled_write_ln("> UNIMPLEMENTED", false);
             break;
     
@@ -214,7 +236,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_PROGRAMING] = LAYOUT(
                            KC_MEDIA_PLAY_PAUSE,
             TD(TD_CYCLE_LAYERS),
-        KC_D, KC_E, KC_F
+        KC_D, DOXYGEN_COMMENT, COMMENT_SEPARATOR
     ),
 
     [_GIT] = LAYOUT(
