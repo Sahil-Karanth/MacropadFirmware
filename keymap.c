@@ -1,5 +1,6 @@
 #include QMK_KEYBOARD_H
 #include "raw_hid.h"
+#include "string.h"
 
 #define KEYMAP_UK
 
@@ -10,7 +11,7 @@
 #define NUM_LAYERS 4
 #define HID_BUFFER_SIZE 33
 
-char received_data[HID_BUFFER_SIZE] = "no data";
+char received_data[HID_BUFFER_SIZE] = "n/a";
 
 enum layer_names {
     _BASE,
@@ -41,6 +42,15 @@ enum tap_dance_codes {
 };
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record);
+
+// -------------------------------------------------------------------------- //
+// Raw HID Declarations
+// -------------------------------------------------------------------------- //
+
+enum PC_req_types {
+    PC_PERFORMANCE,
+
+};
 
 // -------------------------------------------------------------------------- //
 // Helper Functions
@@ -131,6 +141,41 @@ void handleNameCaseChange(keyrecord_t *record) {
     }
 }
 
+// void reqDataFromPC(uint8_t length) {
+//     uint8_t byteToPC[HID_BUFFER_SIZE];
+//     memset(byteToPC, 0, HID_BUFFER_SIZE);
+//     response[0] = 'B';
+
+//     if(data[0] == 'A') {
+//         raw_hid_send(response, HID_BUFFER_SIZE);
+//     }
+// }
+
+void writePCStatus(void) {
+
+    // assumes a recent HID fetch happened to request status data
+    // data received as RAM_USAGE|CPU_USAGE
+
+    uprintf("received_data: %s\n", received_data);
+
+    // char *delim = "|";
+    // char *ram = strtok(received_data, delim);
+    // char *cpu = strtok(NULL, delim);
+
+    char ram_buf[16] = "n/a";
+    char cpu_buf[16] = "n/a";
+
+    sscanf(received_data, "%15[^|]|%15s", ram_buf, cpu_buf);
+
+    // if (cpu == NULL) {
+    //     cpu = "n/a";
+    // }
+
+    char pc_status_str[100];
+    snprintf(pc_status_str, sizeof(pc_status_str), "RAM (%s), CPU (%s)", ram_buf, cpu_buf);
+    oled_write_ln(pc_status_str, false);
+}
+
 // -------------------------------------------------------------------------- //
 // Override Functions1
 // -------------------------------------------------------------------------- //
@@ -141,22 +186,13 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
     if (length >= HID_BUFFER_SIZE) {
         length = HID_BUFFER_SIZE - 1;
     }
-    
     memcpy(received_data, data, length);
     received_data[length] = '\0';
-    
-    oled_write_ln("got something!", false);
+
+    uprintf("raw_hid_receive: %.*s\n", length, data);
+
+    // oled_task_user();
 }
-
-// void raw_hid_receive(uint8_t *data, uint8_t length) {
-//     uint8_t response[length];
-//     memset(response, 0, length);
-//     response[0] = 'B';
-
-//     if(data[0] == 'A') {
-//         raw_hid_send(response, length);
-//     }
-// }
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
@@ -215,36 +251,42 @@ bool oled_task_user(void) {
     switch (curr_layer) {
         case _BASE:
             oled_write_ln("Home Layer", false);
-            oled_write_ln("\n", false);
             oled_write_ln("< lock computer", false);
             oled_write_ln("v open vscode", false);
             oled_write_ln("> email", false);
-            oled_write_ln(received_data, false);
-            
+
+            oled_write_ln("\n", false);
+            writePCStatus();
             break;
         
         case _PROGRAMING:
             oled_write_ln("Programming Layer", false);
-            oled_write_ln("\n", false);
             oled_write_ln("< comment separator", false);
             oled_write_ln("v doxygen comment", false);
             oled_write_ln("> UNIMPLEMENTED", false);
+            
+            oled_write_ln("\n", false);
+            writePCStatus();
             break;
     
         case _GIT:
             oled_write_ln("Git Layer", false);
-            oled_write_ln("\n", false);
             oled_write_ln("< commit all", false);
             oled_write_ln("v commit tracked", false);
             oled_write_ln("> git status", false);
+            
+            oled_write_ln("\n", false);
+            writePCStatus();
             break;
     
         case _MARKDOWN:
             oled_write_ln("Markdown Layer", false);
-            oled_write_ln("\n", false);
             oled_write_ln("< UNIMPLEMENTED", false);
             oled_write_ln("v UNIMPLEMENTED", false);
             oled_write_ln("> UNIMPLEMENTED", false);
+            
+            oled_write_ln("\n", false);
+            writePCStatus();
             break;
         
     }
