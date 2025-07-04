@@ -1,4 +1,5 @@
 #include QMK_KEYBOARD_H
+#define KEYMAP_UK
 
 // -------------------------------------------------------------------------- //
 // Declarations and Globals
@@ -45,9 +46,13 @@ void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly) {
 
         // Send git commit command
         if (commitTrackedOnly) {
-            send_string("git commit -am '' # COMMIT TRACKED ONLY");
+            send_string("git commit -am '' ");
+            tap_code(KC_NUHS); // UK # key
+            send_string(" COMMIT TRACKED ONLY");
         } else {
-            send_string("git add . && git commit -m ''          # COMMIT ALL");
+            send_string("git add . && git commit -m ''          ");
+            tap_code(KC_NUHS); // UK # key
+            send_string(" COMMIT ALL");
         }
 
         // Move cursor inside the quotes
