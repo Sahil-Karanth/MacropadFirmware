@@ -18,6 +18,9 @@ int curr_layer = _BASE;
 
 enum custom_keycodes {
     CYCLE_LAYERS = SAFE_RANGE,
+
+    COMMENT_SEPARATOR,
+
     GIT_COMMIT_ALL,
     GIT_COMMIT_TRACKED,
 };
@@ -25,41 +28,36 @@ enum custom_keycodes {
 bool process_record_user(uint16_t keycode, keyrecord_t *record);
 
 
+
+
+
 // -------------------------------------------------------------------------- //
 // Helper Functions
 // -------------------------------------------------------------------------- //
 
-void handleGitCommitAll(keyrecord_t *record) {
-
-    // go to vscode terminal
-    if (record->event.pressed) {
-        tap_code16(LCTL(KC_PGUP));
-    }
-
-    // type the commit (with implicit add)
-    send_string("git add . && git commit -m \"\"");
-    tap_code(KC_LEFT);
-
-}
-
-void handleGitCommitTracked(keyrecord_t *record) {
-    
-    // go to vscode terminal
-    if (record->event.pressed) {
-        tap_code16(LCTL(KC_PGUP));
-    }
-
-    // type the commit (with implicit add)
-    send_string("git commit -am \"\"");
-    tap_code(KC_LEFT);
-    
-}
-
 void handleGitCommit(keyrecord_t *record, bool commitUntrackedOnly) {
-    if (commitUntrackedOnly) {
-        handleGitCommitTracked(record);
-    } else {
-        handleGitCommitAll(record);
+    if (record->event.pressed) {
+
+        // Focus VSCode terminal (Ctrl + `)
+        tap_code16(LCTL(KC_GRAVE));
+        wait_ms(100);
+
+        // Send git commit command
+        if (commitUntrackedOnly) {
+            send_string("git commit -am ''");
+        } else {
+            send_string("git add . && git commit -m ''");
+        }
+
+        // Move cursor inside the quotes
+        tap_code(KC_LEFT);
+    }
+}
+
+
+void handleCommentSep(keyrecord_t *record) {
+    if (record -> event.pressed) {
+        send_string("// -------------------------------------------------------------------------- //");
     }
 }
 
@@ -80,11 +78,21 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             return false;
         }
 
-        case GIT_COMMIT_ALL:
+        case GIT_COMMIT_ALL: {
             handleGitCommit(record, true);
+            return false;
+        }
 
-        case GIT_COMMIT_TRACKED:
+        case GIT_COMMIT_TRACKED: {
             handleGitCommit(record, false);
+            return false;
+        }
+
+        case COMMENT_SEPARATOR: {
+            handleCommentSep(record);
+            return false;
+        }
+
     }
 
     return true;
