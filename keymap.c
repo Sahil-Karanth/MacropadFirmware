@@ -23,6 +23,7 @@ enum custom_keycodes {
 
     GIT_COMMIT_ALL,
     GIT_COMMIT_TRACKED,
+    GIT_STATUS,
 };
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record);
@@ -35,7 +36,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record);
 // Helper Functions
 // -------------------------------------------------------------------------- //
 
-void handleGitCommit(keyrecord_t *record, bool commitUntrackedOnly) {
+void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly) {
     if (record->event.pressed) {
 
         // Focus VSCode terminal (Ctrl + `)
@@ -43,14 +44,30 @@ void handleGitCommit(keyrecord_t *record, bool commitUntrackedOnly) {
         wait_ms(100);
 
         // Send git commit command
-        if (commitUntrackedOnly) {
-            send_string("git commit -am ''");
+        if (commitTrackedOnly) {
+            send_string("git commit -am '' # COMMIT TRACKED ONLY");
         } else {
-            send_string("git add . && git commit -m ''");
+            send_string("git add . && git commit -m ''          # COMMIT ALL");
         }
 
         // Move cursor inside the quotes
-        tap_code(KC_LEFT);
+        for (int i = 0; i < 23; i++) {
+            tap_code(KC_LEFT);
+        }
+    }
+}
+
+
+void handleGitStatus(keyrecord_t *record) {
+    if (record->event.pressed) {
+
+        // Focus VSCode terminal (Ctrl + `)
+        tap_code16(LCTL(KC_GRAVE));
+        wait_ms(100);
+
+        send_string("git status");
+
+        tap_code(KC_ENTER);
     }
 }
 
@@ -79,12 +96,17 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         }
 
         case GIT_COMMIT_ALL: {
-            handleGitCommit(record, true);
+            handleGitCommit(record, false);
             return false;
         }
 
         case GIT_COMMIT_TRACKED: {
-            handleGitCommit(record, false);
+            handleGitCommit(record, true);
+            return false;
+        }
+        
+        case GIT_STATUS: {
+            handleGitStatus(record);
             return false;
         }
 
@@ -111,6 +133,10 @@ bool oled_task_user(void) {
     
         case _GIT:
             oled_write_ln("Git Layer", false);
+            oled_write_ln("\n", false);
+            oled_write_ln("< commit all", false);
+            oled_write_ln("v commit tracked", false);
+            oled_write_ln("> git status", false);
             break;
     
         case _MARKDOWN:
@@ -144,7 +170,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_GIT] = LAYOUT(
                            KC_MEDIA_PLAY_PAUSE,
             CYCLE_LAYERS,
-        GIT_COMMIT_ALL, GIT_COMMIT_TRACKED, KC_F
+        GIT_STATUS, GIT_COMMIT_TRACKED, GIT_COMMIT_ALL
     ),
 
     [_MARKDOWN] = LAYOUT(
