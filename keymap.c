@@ -1,4 +1,5 @@
 #include QMK_KEYBOARD_H
+#include "raw_hid.h"
 
 #define KEYMAP_UK
 
@@ -7,6 +8,9 @@
 // -------------------------------------------------------------------------- //
 
 #define NUM_LAYERS 4
+#define HID_BUFFER_SIZE 33
+
+char received_data[HID_BUFFER_SIZE] = "no data";
 
 enum layer_names {
     _BASE,
@@ -89,7 +93,6 @@ void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly) {
 
 void handleGitStatus(keyrecord_t *record) {
     if (record->event.pressed) {
-
         // Focus VSCode terminal (Ctrl + `)
         tap_code16(LCTL(KC_GRAVE));
         wait_ms(100);
@@ -110,23 +113,52 @@ void handleCommentSep(keyrecord_t *record) {
 
 void handleDoxygenComment(keyrecord_t *record) {
     if (record->event.pressed) {
-        const char *doxygen_comment =
-            "* @brief BRIEF\n"
-            "*\n"
-            "* DESCR\n"
-            "*\n"
-            "* @param PNAME PDESC\n"
-            "* @return RDESC\n"
-
-        send_string(doxygen_comment);
+        send_string(
+            " * @brief BRIEF\n"
+            " *\n"
+            " * DESCR\n"
+            " *\n"
+            " * @param PNAME PDESC\n"
+            " * @return RDESC\n"
+        );
     }
 }
 
 
+void handleNameCaseChange(keyrecord_t *record) {
+    if (record -> event.pressed) {
+        oled_write_ln(received_data, false);
+    }
+}
+
 // -------------------------------------------------------------------------- //
-// Override Functions
+// Override Functions1
 // -------------------------------------------------------------------------- //
 
+
+// void raw_hid_receive(uint8_t *data, uint8_t length) {
+//     // Debug print
+//     dprintf("HID: received %d bytes\n", length);
+    
+//     if (length >= HID_BUFFER_SIZE) {
+//         length = HID_BUFFER_SIZE - 1;
+//     }
+    
+//     memcpy(received_data, data, length);
+//     received_data[length] = '\0';
+    
+//     oled_write_ln("got something!", false);
+// }
+
+void raw_hid_receive(uint8_t *data, uint8_t length) {
+    uint8_t response[length];
+    memset(response, 0, length);
+    response[0] = 'B';
+
+    if(data[0] == 'A') {
+        raw_hid_send(response, length);
+    }
+}
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
@@ -170,10 +202,10 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             handleDoxygenComment(record);
             return false;
         }
-        // case COMMENT_SEPARATOR: {
-        //     handleCommentSep(record);
-        //     return false;
-        // }
+        case NAME_CASE_CHANGE: {
+            handleNameCaseChange(record);
+            return false;
+        }
 
     }
 
@@ -189,6 +221,8 @@ bool oled_task_user(void) {
             oled_write_ln("< lock computer", false);
             oled_write_ln("v open vscode", false);
             oled_write_ln("> email", false);
+            oled_write_ln(received_data, false);
+            
             break;
         
         case _PROGRAMING:
