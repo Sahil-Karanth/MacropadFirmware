@@ -1,6 +1,11 @@
 #include QMK_KEYBOARD_H
 #include "raw_hid.h"
 #include "string.h"
+#include "stdbool.h"
+#include "print.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <assert.h>
 
 #define KEYMAP_UK
 
@@ -11,7 +16,10 @@
 #define NUM_LAYERS 4
 #define HID_BUFFER_SIZE 33
 
+// Globals for Raw HID communication
 char received_data[HID_BUFFER_SIZE] = "n/a";
+volatile bool has_new_data = false;
+static uint32_t pc_status_timer = 0;
 
 enum layer_names {
     _BASE,
@@ -22,16 +30,13 @@ enum layer_names {
 
 int curr_layer = _BASE;
 
-
 enum custom_keycodes {
     LOCK_COMPUTER = SAFE_RANGE,
     VSCODE_OPEN,
     EMAIL,
-
     COMMENT_SEPARATOR,
     DOXYGEN_COMMENT,
     NAME_CASE_CHANGE,
-
     GIT_COMMIT_ALL,
     GIT_COMMIT_TRACKED,
     GIT_STATUS,
@@ -41,16 +46,59 @@ enum tap_dance_codes {
     TD_CYCLE_LAYERS
 };
 
-bool process_record_user(uint16_t keycode, keyrecord_t *record);
 
 // -------------------------------------------------------------------------- //
 // Raw HID Declarations
 // -------------------------------------------------------------------------- //
 
 enum PC_req_types {
-    PC_PERFORMANCE,
-
+    PC_PERFORMANCE = 1,
+    CURRENT_SONG,
 };
+
+#define MAX_QUEUE_SIZE 100
+
+typedef struct {
+    int data[MAX_QUEUE_SIZE];
+    int front;
+    int rear;
+    int size;
+} queue_t;
+
+void initQueue(queue_t *q) {
+    q->front = 0;
+    q->rear = 0;
+    q->size = 0;
+}
+
+int isFull(queue_t *q) {
+    return q->size == MAX_QUEUE_SIZE;
+}
+
+int isEmpty(queue_t *q) {
+    return q->size == 0;
+}
+
+int enqueue(queue_t *q, int value) {
+    if (isFull(q)) return 0;
+    q->data[q->rear] = value;
+    q->rear = (q->rear + 1) % MAX_QUEUE_SIZE;
+    q->size++;
+    return 1;
+}
+
+int dequeue(queue_t *q, int *value) {
+    if (isEmpty(q)) return 0;
+    *value = q->data[q->front];
+    q->front = (q->front + 1) % MAX_QUEUE_SIZE;
+    q->size--;
+    return 1;
+}
+
+
+// the request queue (initially empty)
+queue_t req_queue;
+initQueue(&req_queue);
 
 // -------------------------------------------------------------------------- //
 // Helper Functions
@@ -77,49 +125,37 @@ void handleOpenVscode(keyrecord_t *record) {
 
 void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly) {
     if (record->event.pressed) {
-
-        // Focus VSCode terminal (Ctrl + `)
         tap_code16(LCTL(KC_GRAVE));
         wait_ms(100);
-
-        // Send git commit command
         if (commitTrackedOnly) {
             send_string("git commit -am '' ");
             tap_code(KC_NUHS); // UK # key
             send_string(" COMMIT TRACKED ONLY");
         } else {
-            send_string("git add . && git commit -m ''          ");
+            send_string("git add . && git commit -m ''       ");
             tap_code(KC_NUHS);
             send_string(" COMMIT ALL");
         }
-
-        // Move cursor inside the quotes
         for (int i = 0; i < 23; i++) {
             tap_code(KC_LEFT);
         }
     }
 }
 
-
 void handleGitStatus(keyrecord_t *record) {
     if (record->event.pressed) {
-        // Focus VSCode terminal (Ctrl + `)
         tap_code16(LCTL(KC_GRAVE));
         wait_ms(100);
-
         send_string("git status");
-
         tap_code(KC_ENTER);
     }
 }
 
-
 void handleCommentSep(keyrecord_t *record) {
-    if (record -> event.pressed) {
+    if (record->event.pressed) {
         send_string("// -------------------------------------------------------------------------- //");
     }
 }
-
 
 void handleDoxygenComment(keyrecord_t *record) {
     if (record->event.pressed) {
@@ -134,69 +170,112 @@ void handleDoxygenComment(keyrecord_t *record) {
     }
 }
 
-
 void handleNameCaseChange(keyrecord_t *record) {
-    if (record -> event.pressed) {
+    if (record->event.pressed) {
         oled_write_ln(received_data, false);
     }
 }
 
-// void reqDataFromPC(uint8_t length) {
-//     uint8_t byteToPC[HID_BUFFER_SIZE];
-//     memset(byteToPC, 0, HID_BUFFER_SIZE);
-//     response[0] = 'B';
+// -------------------------------------------------------------------------- //
+// QMK Override Functions
+// -------------------------------------------------------------------------- //
 
-//     if(data[0] == 'A') {
-//         raw_hid_send(response, HID_BUFFER_SIZE);
-//     }
-// }
+// This callback runs automatically when data is received from the PC
+void matrix_scan_user(void) {
+    // Check if 5 seconds have passed since the last request
+    if (timer_elapsed32(pc_status_timer) > 5000) {
+        print("matrix scan - sending request\n");
+        // Reset the timer
+        pc_status_timer = timer_read32();
+        
+        uint8_t byteToPC[HID_BUFFER_SIZE];
+        memset(byteToPC, 0, HID_BUFFER_SIZE);  // Clear buffer first
+        byteToPC[0] = PC_PERFORMANCE;          // Set first byte as request type
 
-void writePCStatus(void) {
+        
 
-    // assumes a recent HID fetch happened to request status data
-    // data received as RAM_USAGE|CPU_USAGE
-
-    uprintf("received_data: %s\n", received_data);
-
-    // char *delim = "|";
-    // char *ram = strtok(received_data, delim);
-    // char *cpu = strtok(NULL, delim);
-
-    char ram_buf[16] = "n/a";
-    char cpu_buf[16] = "n/a";
-
-    sscanf(received_data, "%15[^|]|%15s", ram_buf, cpu_buf);
-
-    // if (cpu == NULL) {
-    //     cpu = "n/a";
-    // }
-
-    char pc_status_str[100];
-    snprintf(pc_status_str, sizeof(pc_status_str), "RAM (%s), CPU (%s)", ram_buf, cpu_buf);
-    oled_write_ln(pc_status_str, false);
+        // // Send a request to the PC for new data
+        // uint8_t byteToPC[HID_BUFFER_SIZE];
+        // memset(byteToPC, 0, HID_BUFFER_SIZE);  // Clear buffer first
+        // byteToPC[0] = PC_PERFORMANCE;          // Set first byte as request type
+        // raw_hid_send(byteToPC, HID_BUFFER_SIZE);
+    }
 }
 
-// -------------------------------------------------------------------------- //
-// Override Functions1
-// -------------------------------------------------------------------------- //
-
-
+// In raw_hid_receive(), add some debug output:
 void raw_hid_receive(uint8_t *data, uint8_t length) {
+    print("Raw HID data received\n");
     
     if (length >= HID_BUFFER_SIZE) {
         length = HID_BUFFER_SIZE - 1;
     }
+    
+    // Copy the data and null-terminate
     memcpy(received_data, data, length);
     received_data[length] = '\0';
+    has_new_data = true;
+    
+    // Debug output
+    printf("Received: %s\n", received_data);
+}
 
-    uprintf("raw_hid_receive: %.*s\n", length, data);
+// This function runs to update the OLED display
+bool oled_task_user(void) {
+    // This static buffer will hold the last valid parsed data
+    static char pc_status_str[100] = "RAM:-- CPU:--";
 
-    // oled_task_user();
+    // Check if new data has arrived from the PC
+    if (has_new_data) {
+        has_new_data = false; // Reset the flag
+
+        char ram_buf[16] = "n/a";
+        char cpu_buf[16] = "n/a";
+        
+        // Parse the new data
+        sscanf(received_data, "%15[^|]|%15s", ram_buf, cpu_buf);
+
+        // Format the display string and save it for future display
+        snprintf(pc_status_str, sizeof(pc_status_str), "RAM:%s CPU:%s", ram_buf, cpu_buf);
+    }
+
+    // This part now runs instantly without blocking
+    switch (curr_layer) {
+        case _BASE:
+            oled_write_ln("Home Layer", false);
+            oled_write_ln("< lock computer", false);
+            oled_write_ln("v open vscode", false);
+            oled_write_ln("> email", false);
+            break;
+        case _PROGRAMING:
+            oled_write_ln("Programming Layer", false);
+            oled_write_ln("< comment separator", false);
+            oled_write_ln("v doxygen comment", false);
+            oled_write_ln("> UNIMPLEMENTED", false);
+            break;
+        case _GIT:
+            oled_write_ln("Git Layer", false);
+            oled_write_ln("< commit all", false);
+            oled_write_ln("v commit tracked", false);
+            oled_write_ln("> git status", false);
+            break;
+        case _MARKDOWN:
+            oled_write_ln("Markdown Layer", false);
+            oled_write_ln("< UNIMPLEMENTED", false);
+            oled_write_ln("v UNIMPLEMENTED", false);
+            oled_write_ln("> UNIMPLEMENTED", false);
+            break;
+    }
+    
+    // Always display the last known PC status string
+    oled_write_ln("\n", false);
+    oled_write_ln(pc_status_str, false);
+    
+    return false;
 }
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-    switch (keycode) {
 
+    switch (keycode) {
         // Home macros
         case LOCK_COMPUTER: {
             tap_code16(LGUI(KC_L));
@@ -212,7 +291,6 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
-
         // Git macros
         case GIT_COMMIT_ALL: {
             handleGitCommit(record, false);
@@ -226,7 +304,6 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             handleGitStatus(record);
             return false;
         }
-
         // Programming macros
         case COMMENT_SEPARATOR: {
             handleCommentSep(record);
@@ -240,60 +317,9 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             handleNameCaseChange(record);
             return false;
         }
-
     }
-
     return true;
 }
-
-
-bool oled_task_user(void) {
-    switch (curr_layer) {
-        case _BASE:
-            oled_write_ln("Home Layer", false);
-            oled_write_ln("< lock computer", false);
-            oled_write_ln("v open vscode", false);
-            oled_write_ln("> email", false);
-
-            oled_write_ln("\n", false);
-            writePCStatus();
-            break;
-        
-        case _PROGRAMING:
-            oled_write_ln("Programming Layer", false);
-            oled_write_ln("< comment separator", false);
-            oled_write_ln("v doxygen comment", false);
-            oled_write_ln("> UNIMPLEMENTED", false);
-            
-            oled_write_ln("\n", false);
-            writePCStatus();
-            break;
-    
-        case _GIT:
-            oled_write_ln("Git Layer", false);
-            oled_write_ln("< commit all", false);
-            oled_write_ln("v commit tracked", false);
-            oled_write_ln("> git status", false);
-            
-            oled_write_ln("\n", false);
-            writePCStatus();
-            break;
-    
-        case _MARKDOWN:
-            oled_write_ln("Markdown Layer", false);
-            oled_write_ln("< UNIMPLEMENTED", false);
-            oled_write_ln("v UNIMPLEMENTED", false);
-            oled_write_ln("> UNIMPLEMENTED", false);
-            
-            oled_write_ln("\n", false);
-            writePCStatus();
-            break;
-        
-    }
-    
-    return false;
-}
-
 
 // -------------------------------------------------------------------------- //
 // Macropad Layout
@@ -301,31 +327,26 @@ bool oled_task_user(void) {
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_BASE] = LAYOUT(
-                           KC_MEDIA_PLAY_PAUSE,
-            TD(TD_CYCLE_LAYERS),
+        KC_MEDIA_PLAY_PAUSE,
+        TD(TD_CYCLE_LAYERS),
         EMAIL, VSCODE_OPEN, LOCK_COMPUTER
     ),
-
-    
     [_PROGRAMING] = LAYOUT(
-                           KC_MEDIA_PLAY_PAUSE,
-            TD(TD_CYCLE_LAYERS),
+        KC_MEDIA_PLAY_PAUSE,
+        TD(TD_CYCLE_LAYERS),
         KC_D, DOXYGEN_COMMENT, COMMENT_SEPARATOR
     ),
-
     [_GIT] = LAYOUT(
-                           KC_MEDIA_PLAY_PAUSE,
-            TD(TD_CYCLE_LAYERS),
+        KC_MEDIA_PLAY_PAUSE,
+        TD(TD_CYCLE_LAYERS),
         GIT_STATUS, GIT_COMMIT_TRACKED, GIT_COMMIT_ALL
     ),
-
     [_MARKDOWN] = LAYOUT(
-                           KC_MEDIA_PLAY_PAUSE,
-            TD(TD_CYCLE_LAYERS),
+        KC_MEDIA_PLAY_PAUSE,
+        TD(TD_CYCLE_LAYERS),
         KC_D, KC_E, KC_F
     ),    
 };
-
 
 tap_dance_action_t tap_dance_actions[] = {
     [TD_CYCLE_LAYERS] = ACTION_TAP_DANCE_FN(cycleLayers),
