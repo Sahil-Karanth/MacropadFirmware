@@ -18,7 +18,7 @@
 
 // Globals for Raw HID communication
 char received_data[HID_BUFFER_SIZE] = "n/a";
-volatile bool has_new_data = false;
+// volatile bool has_new_data = false;
 static uint32_t pc_status_timer = 0;
 
 enum layer_names {
@@ -98,7 +98,6 @@ int dequeue(queue_t *q, int *value) {
 
 // the request queue (initially empty)
 queue_t req_queue;
-initQueue(&req_queue);
 
 // -------------------------------------------------------------------------- //
 // Helper Functions
@@ -180,65 +179,69 @@ void handleNameCaseChange(keyrecord_t *record) {
 // QMK Override Functions
 // -------------------------------------------------------------------------- //
 
-// This callback runs automatically when data is received from the PC
+
+void keyboard_post_init_user(void) {
+    initQueue(&req_queue);
+}
+
+
 void matrix_scan_user(void) {
     // Check if 5 seconds have passed since the last request
     if (timer_elapsed32(pc_status_timer) > 5000) {
-        print("matrix scan - sending request\n");
+
         // Reset the timer
         pc_status_timer = timer_read32();
-        
-        uint8_t byteToPC[HID_BUFFER_SIZE];
-        memset(byteToPC, 0, HID_BUFFER_SIZE);  // Clear buffer first
-        byteToPC[0] = PC_PERFORMANCE;          // Set first byte as request type
 
-        
+        // queue the byte
+        enqueue(&req_queue, PC_PERFORMANCE);
 
-        // // Send a request to the PC for new data
-        // uint8_t byteToPC[HID_BUFFER_SIZE];
-        // memset(byteToPC, 0, HID_BUFFER_SIZE);  // Clear buffer first
-        // byteToPC[0] = PC_PERFORMANCE;          // Set first byte as request type
-        // raw_hid_send(byteToPC, HID_BUFFER_SIZE);
+        print("byte enqueued\n");
     }
 }
 
-// In raw_hid_receive(), add some debug output:
+
 void raw_hid_receive(uint8_t *data, uint8_t length) {
+
+    // if (length >= HID_BUFFER_SIZE) {
+    //     length = HID_BUFFER_SIZE - 1;
+    // }
+
     print("Raw HID data received\n");
-    
-    if (length >= HID_BUFFER_SIZE) {
-        length = HID_BUFFER_SIZE - 1;
-    }
-    
-    // Copy the data and null-terminate
+
+    // save received data
     memcpy(received_data, data, length);
     received_data[length] = '\0';
-    has_new_data = true;
-    
-    // Debug output
-    printf("Received: %s\n", received_data);
+
+    // responding to client with next request
+    uint8_t response[length];
+    memset(response, 0, length);
+
+    int req_enum;
+    dequeue(&req_queue, &req_enum);
+
+    response[0] = req_enum;
+
+    raw_hid_send(response, length);
+
+    print("Next raw HID request sent\n");
+
 }
+
 
 // This function runs to update the OLED display
 bool oled_task_user(void) {
     // This static buffer will hold the last valid parsed data
     static char pc_status_str[100] = "RAM:-- CPU:--";
 
-    // Check if new data has arrived from the PC
-    if (has_new_data) {
-        has_new_data = false; // Reset the flag
+    char ram_buf[16] = "--";
+    char cpu_buf[16] = "--";
+    
+    // Parse the new data
+    sscanf(received_data, "%15[^|]|%15s", ram_buf, cpu_buf);
 
-        char ram_buf[16] = "n/a";
-        char cpu_buf[16] = "n/a";
-        
-        // Parse the new data
-        sscanf(received_data, "%15[^|]|%15s", ram_buf, cpu_buf);
+    // Format the display string and save it for future display
+    snprintf(pc_status_str, sizeof(pc_status_str), "RAM:%s CPU:%s", ram_buf, cpu_buf);
 
-        // Format the display string and save it for future display
-        snprintf(pc_status_str, sizeof(pc_status_str), "RAM:%s CPU:%s", ram_buf, cpu_buf);
-    }
-
-    // This part now runs instantly without blocking
     switch (curr_layer) {
         case _BASE:
             oled_write_ln("Home Layer", false);
@@ -266,7 +269,6 @@ bool oled_task_user(void) {
             break;
     }
     
-    // Always display the last known PC status string
     oled_write_ln("\n", false);
     oled_write_ln(pc_status_str, false);
     

@@ -1,6 +1,7 @@
 import sys
 import hid
 import psutil
+import time
 
 vendor_id     = 0xFEED
 product_id    = 0x9A25
@@ -18,7 +19,10 @@ def get_raw_hid_interface():
 
     interface = hid.device()
     interface.open_path(raw_hid_interfaces[0]['path'])
-
+    
+    # Set non-blocking mode or use a timeout
+    interface.set_nonblocking(1)  # or use interface.read(report_length, timeout_ms=1000)
+    
     return interface
 
 def send_raw_report(data):
@@ -28,7 +32,7 @@ def send_raw_report(data):
         print("No device found")
         sys.exit(1)
 
-    request_data = [0x00] * (report_length + 1) # First byte is Report ID
+    request_data = [0x00] * (report_length + 1)  # First byte is Report ID
     request_data[1:len(data) + 1] = data
     request_report = bytes(request_data)
 
@@ -36,21 +40,114 @@ def send_raw_report(data):
     print(request_report)
 
     try:
+        # Send the request
+        bytes_written = interface.write(request_report)
+        print(f"Bytes written: {bytes_written}")
+        
+        # Give QMK time to process
+        time.sleep(0.1)
+        
+        # Try to read response with timeout/non-blocking
+        max_attempts = 10
+        for attempt in range(max_attempts):
+            try:
+                response_report = interface.read(report_length)
+                if response_report:  # Check if we got data
+                    print("Response:")
+                    print(response_report)
+                    break
+                else:
+                    print(f"No data available, attempt {attempt + 1}/{max_attempts}")
+                    time.sleep(0.05)  # Short delay between attempts
+            except Exception as e:
+                print(f"Read error: {e}")
+                break
+        else:
+            print("No response received after all attempts")
 
+    except Exception as e:
+        print(f"Communication error: {e}")
+    finally:
+        interface.close()
+
+
+def send_raw_report_debug(data):
+    interface = get_raw_hid_interface()
+
+    if interface is None:
+        print("No device found")
+        sys.exit(1)
+
+    request_data = [0x00] * (report_length + 1)
+    request_data[1:len(data) + 1] = data
+    request_report = bytes(request_data)
+
+    print("Request:")
+    print([hex(b) for b in request_report])
+
+    try:
+        bytes_written = interface.write(request_report)
+        print(f"Bytes written: {bytes_written}")
+        
+        # Try multiple timeouts
+        for timeout in [100, 500, 1000, 2000]:
+            print(f"Trying timeout: {timeout}ms")
+            response_report = interface.read(report_length, timeout_ms=timeout)
+            
+            if response_report:
+                print("Response received!")
+                print([hex(b) for b in response_report])
+                return
+            else:
+                print(f"No response with {timeout}ms timeout")
+        
+        print("No response received with any timeout")
+
+    except Exception as e:
+        print(f"Communication error: {e}")
+    finally:
+        interface.close()
+
+# Alternative version using timeout instead of non-blocking:
+def send_raw_report_with_timeout(data):
+    interface = get_raw_hid_interface()
+
+    if interface is None:
+        print("No device found")
+        sys.exit(1)
+
+    request_data = [0x00] * (report_length + 1)
+    request_data[1:len(data) + 1] = data
+    request_report = bytes(request_data)
+
+    print("Request:")
+    print(request_report)
+
+    try:
         interface.write(request_report)
+        
+        # Use read with timeout (timeout in milliseconds)
+        response_report = interface.read(report_length, timeout_ms=100000)
+        
+        if response_report:
+            print("Response:")
+            print(response_report)
+        else:
+            print("No response received within timeout")
 
+    except Exception as e:
+        print(f"Communication error: {e}")
     finally:
         interface.close()
 
 if __name__ == '__main__':
-    # Get the current system-wide RAM usage percentage
     ram_percent = psutil.virtual_memory().percent
     cpu_percent = psutil.cpu_percent(interval=1)
 
-    # Convert the float value to a string
     message = f"{str(ram_percent)}|{str(cpu_percent)}"
-    # Convert the string to a sequence of bytes and send it
     print(message)
     data_to_send = message.encode('utf-8')
     print(data_to_send)
-    send_raw_report(data_to_send)
+    
+    # Try the timeout version first
+    send_raw_report_debug(data_to_send)
