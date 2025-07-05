@@ -13,19 +13,24 @@
 // Declarations and Globals
 // -------------------------------------------------------------------------- //
 
-#define NUM_LAYERS 4
+#define NUM_LAYERS 5
 #define HID_BUFFER_SIZE 33
 
 // Globals for Raw HID communication
-char received_data[HID_BUFFER_SIZE] = "n/a";
+char received_data[HID_BUFFER_SIZE] = "--";
+char received_pc_stats[HID_BUFFER_SIZE] = "--";
+char received_network_stats[HID_BUFFER_SIZE] = "--";
+
 // volatile bool has_new_data = false;
 static uint32_t pc_status_timer = 0;
+bool do_network_test = false;
 
 enum layer_names {
     _BASE,
     _PROGRAMING,
     _GIT,
     _MARKDOWN,
+    _NETWORK,
 };
 
 int curr_layer = _BASE;
@@ -53,6 +58,7 @@ enum tap_dance_codes {
 
 enum PC_req_types {
     PC_PERFORMANCE = 1,
+    NETWORK_TEST,
     CURRENT_SONG,
 };
 
@@ -175,6 +181,57 @@ void handleNameCaseChange(keyrecord_t *record) {
     }
 }
 
+void copy_buffer(char *src_buf, char *dest_buf) {
+    memcpy(dest_buf, src_buf, HID_BUFFER_SIZE - 1);
+    dest_buf[HID_BUFFER_SIZE - 1] = '\0';
+}
+
+void categorise_received_data(void) {
+    int data_id = received_data[0] - '0';
+
+    switch (data_id) {
+        case PC_PERFORMANCE:
+            copy_buffer(received_data + 1, received_pc_stats);
+            break;
+    }
+}
+
+void write_pc_status_oled() {
+    static char pc_status_str[100] = "RAM:-- CPU:--";
+
+    char ram_buf[16] = "--";
+    char cpu_buf[16] = "--";
+
+    // Parse the new data
+    sscanf(received_pc_stats, "%15[^|]|%15s", ram_buf, cpu_buf);
+
+    // Format the display string and save it for future display
+    snprintf(pc_status_str, sizeof(pc_status_str), "RAM:%s CPU:%s", ram_buf, cpu_buf);
+
+    oled_write_ln("\n", false);
+    oled_write_ln(pc_status_str, false);
+}
+
+
+void write_network_oled() {
+    static char network_str[100] = "doing speed test...";
+
+    oled_write_ln("\n", false);
+    oled_write_ln(network_str, false);
+
+    char download[16] = "--";
+    char upload[16] = "--";
+
+    // Parse the new data
+    sscanf(received_network_stats, "%15[^|]|%15s", download, upload);
+
+    // Format the display string and save it for future display
+    snprintf(network_str, sizeof(network_str), "download:%s mbps\nupload:%s mbps", download, upload);
+
+    oled_write_ln("\n", false);
+    oled_write_ln(network_str, false);
+}
+
 // -------------------------------------------------------------------------- //
 // QMK Override Functions
 // -------------------------------------------------------------------------- //
@@ -193,7 +250,11 @@ void matrix_scan_user(void) {
         pc_status_timer = timer_read32();
 
         // queue the byte
-        enqueue(&req_queue, PC_PERFORMANCE);
+        if (curr_layer <= 3) {
+            enqueue(&req_queue, PC_PERFORMANCE);
+        } else if (curr_layer == 4 && do_network_test) {
+            enqueue(&req_queue, NETWORK_TEST);
+        }
 
         print("byte enqueued\n");
     }
@@ -209,8 +270,12 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
     print("Raw HID data received\n");
 
     // save received data
-    memcpy(received_data, data, length);
-    received_data[length] = '\0';
+    // memcpy(received_data, data, length);
+    // received_data[length] = '\0';
+    copy_buffer(data, received_data);
+
+
+    categorise_received_data();
 
     // responding to client with next request
     uint8_t response[length];
@@ -230,17 +295,6 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
 
 // This function runs to update the OLED display
 bool oled_task_user(void) {
-    // This static buffer will hold the last valid parsed data
-    static char pc_status_str[100] = "RAM:-- CPU:--";
-
-    char ram_buf[16] = "--";
-    char cpu_buf[16] = "--";
-    
-    // Parse the new data
-    sscanf(received_data, "%15[^|]|%15s", ram_buf, cpu_buf);
-
-    // Format the display string and save it for future display
-    snprintf(pc_status_str, sizeof(pc_status_str), "RAM:%s CPU:%s", ram_buf, cpu_buf);
 
     switch (curr_layer) {
         case _BASE:
@@ -248,29 +302,39 @@ bool oled_task_user(void) {
             oled_write_ln("< lock computer", false);
             oled_write_ln("v open vscode", false);
             oled_write_ln("> email", false);
+            write_pc_status_oled();
             break;
         case _PROGRAMING:
             oled_write_ln("Programming Layer", false);
             oled_write_ln("< comment separator", false);
             oled_write_ln("v doxygen comment", false);
             oled_write_ln("> UNIMPLEMENTED", false);
+            write_pc_status_oled();
             break;
         case _GIT:
             oled_write_ln("Git Layer", false);
             oled_write_ln("< commit all", false);
             oled_write_ln("v commit tracked", false);
             oled_write_ln("> git status", false);
+            write_pc_status_oled();
             break;
         case _MARKDOWN:
             oled_write_ln("Markdown Layer", false);
             oled_write_ln("< UNIMPLEMENTED", false);
             oled_write_ln("v UNIMPLEMENTED", false);
             oled_write_ln("> UNIMPLEMENTED", false);
+            write_pc_status_oled();
+            break;
+        case _NETWORK:
+            oled_write_ln("Markdown Layer", false);
+            oled_write_ln("\n", false);
+            oled_write_ln("wifi speed:", false);
+            oled_write_ln("\n", false);
+            oled_write_ln("\n", false);
+            write_network_oled();
             break;
     }
-    
-    oled_write_ln("\n", false);
-    oled_write_ln(pc_status_str, false);
+
     
     return false;
 }
@@ -344,6 +408,11 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         GIT_STATUS, GIT_COMMIT_TRACKED, GIT_COMMIT_ALL
     ),
     [_MARKDOWN] = LAYOUT(
+        KC_MEDIA_PLAY_PAUSE,
+        TD(TD_CYCLE_LAYERS),
+        KC_D, KC_E, KC_F
+    ),
+    [_NETWORK] = LAYOUT(
         KC_MEDIA_PLAY_PAUSE,
         TD(TD_CYCLE_LAYERS),
         KC_D, KC_E, KC_F

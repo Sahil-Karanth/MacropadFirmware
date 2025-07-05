@@ -1,18 +1,21 @@
-import psutil
-import time
+import speedtest
 
-def get_download_mbps(interval=1):
-    net1 = psutil.net_io_counters()
-    time.sleep(interval)
-    net2 = psutil.net_io_counters()
+def test_internet_speed():
+    try:
+        st = speedtest.Speedtest()
+        print("Testing internet speed...")
 
-    # Bytes received in interval
-    bytes_recv = net2.bytes_recv - net1.bytes_recv
+        # Perform the download speed test
+        download_speed = st.download() / 1000000  # Convert to Mbps
 
-    # Convert to Megabits per second
-    mbps = (bytes_recv * 8) / (interval * 1_000_000)
-    return round(mbps, 2)
+        # Perform the upload speed test
+        upload_speed = st.upload() / 1000000  # Convert to Mbps
 
-while True:
-    dl_speed = get_download_mbps()
-    print(f"Download: {dl_speed} Mbps")
+        # Print the results
+        print("Download Speed: {:.2f} Mbps".format(download_speed))
+        print("Upload Speed: {:.2f} Mbps".format(upload_speed))
+
+    except speedtest.SpeedtestException as e:
+        print("An error occurred during the speed test:", str(e))
+
+test_internet_speed()
