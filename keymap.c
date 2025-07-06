@@ -51,15 +51,14 @@ enum tap_dance_codes {
     TD_CYCLE_LAYERS
 };
 
-
 // -------------------------------------------------------------------------- //
 // Raw HID Declarations
 // -------------------------------------------------------------------------- //
 
 enum PC_req_types {
     PC_PERFORMANCE = 1,
-    NETWORK_TEST,
-    CURRENT_SONG,
+    NETWORK_TEST = 2,
+    CURRENT_SONG = 3,
 };
 
 #define MAX_QUEUE_SIZE 100
@@ -70,6 +69,24 @@ typedef struct {
     int rear;
     int size;
 } queue_t;
+
+// Function declarations
+void initQueue(queue_t *q);
+int isFull(queue_t *q);
+int isEmpty(queue_t *q);
+int enqueue(queue_t *q, int value);
+int dequeue(queue_t *q, int *value);
+void cycleLayers(tap_dance_state_t *state, void *user_data);
+void handleOpenVscode(keyrecord_t *record);
+void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly);
+void handleGitStatus(keyrecord_t *record);
+void handleCommentSep(keyrecord_t *record);
+void handleDoxygenComment(keyrecord_t *record);
+void handleNameCaseChange(keyrecord_t *record);
+void copy_buffer(uint8_t *src_buf, char *dest_buf);
+void categorise_received_data(void);
+void write_pc_status_oled(void);
+void write_network_oled(void);
 
 void initQueue(queue_t *q) {
     q->front = 0;
@@ -100,7 +117,6 @@ int dequeue(queue_t *q, int *value) {
     q->size--;
     return 1;
 }
-
 
 // the request queue (initially empty)
 queue_t req_queue;
@@ -181,8 +197,8 @@ void handleNameCaseChange(keyrecord_t *record) {
     }
 }
 
-void copy_buffer(char *src_buf, char *dest_buf) {
-    memcpy(dest_buf, src_buf, HID_BUFFER_SIZE - 1);
+void copy_buffer(uint8_t *src_buf, char *dest_buf) {
+    memcpy(dest_buf, (char*)src_buf, HID_BUFFER_SIZE - 1);
     dest_buf[HID_BUFFER_SIZE - 1] = '\0';
 }
 
@@ -191,12 +207,15 @@ void categorise_received_data(void) {
 
     switch (data_id) {
         case PC_PERFORMANCE:
-            copy_buffer(received_data + 1, received_pc_stats);
+            copy_buffer((uint8_t*)(received_data + 1), received_pc_stats);
+            break;
+        case NETWORK_TEST:
+            copy_buffer((uint8_t*)(received_data + 1), received_network_stats);
             break;
     }
 }
 
-void write_pc_status_oled() {
+void write_pc_status_oled(void) {
     static char pc_status_str[100] = "RAM:-- CPU:--";
 
     char ram_buf[16] = "--";
@@ -212,47 +231,52 @@ void write_pc_status_oled() {
     oled_write_ln(pc_status_str, false);
 }
 
-
-void write_network_oled() {
-    static char network_str[100] = "doing speed test...";
-
-    oled_write_ln("\n", false);
-    oled_write_ln(network_str, false);
-
-    char download[16] = "--";
-    char upload[16] = "--";
-
-    // Parse the new data
-    sscanf(received_network_stats, "%15[^|]|%15s", download, upload);
-
-    // Format the display string and save it for future display
-    snprintf(network_str, sizeof(network_str), "download:%s mbps\nupload:%s mbps", download, upload);
-
-    oled_write_ln("\n", false);
-    oled_write_ln(network_str, false);
+void write_network_oled(void) {
+    static char network_display[200] = "Press key to test";
+    
+    // Check if we have received network data
+    if (strcmp(received_network_stats, "--") != 0) {
+        char download[16] = "--";
+        char upload[16] = "--";
+        
+        // Parse the received data
+        sscanf(received_network_stats, "%15[^|]|%15s", download, upload);
+        
+        // Check if it's a test in progress
+        if (strstr(download, "testing") != NULL) {
+            snprintf(network_display, sizeof(network_display), 
+                    "Testing... %s", upload);
+        } else if (strcmp(download, "--") != 0 && strcmp(upload, "--") != 0) {
+            // We have actual results
+            snprintf(network_display, sizeof(network_display), 
+                    "Download: %s Mbps\nUpload: %s Mbps", download, upload);
+        } else {
+            strcpy(network_display, "No data available");
+        }
+    }
+    
+    oled_write_ln(network_display, false);
 }
 
 // -------------------------------------------------------------------------- //
 // QMK Override Functions
 // -------------------------------------------------------------------------- //
 
-
 void keyboard_post_init_user(void) {
     initQueue(&req_queue);
 }
 
-
 void matrix_scan_user(void) {
     // Check if 5 seconds have passed since the last request
     if (timer_elapsed32(pc_status_timer) > 5000) {
-
         // Reset the timer
         pc_status_timer = timer_read32();
 
-        // queue the byte
+        // queue the appropriate request based on current layer
         if (curr_layer <= 3) {
             enqueue(&req_queue, PC_PERFORMANCE);
-        } else if (curr_layer == 4 && do_network_test) {
+        } else if (curr_layer == 4) {
+            // Always request network status when on network layer
             enqueue(&req_queue, NETWORK_TEST);
         }
 
@@ -260,20 +284,11 @@ void matrix_scan_user(void) {
     }
 }
 
-
 void raw_hid_receive(uint8_t *data, uint8_t length) {
-
-    // if (length >= HID_BUFFER_SIZE) {
-    //     length = HID_BUFFER_SIZE - 1;
-    // }
-
     print("Raw HID data received\n");
 
     // save received data
-    // memcpy(received_data, data, length);
-    // received_data[length] = '\0';
     copy_buffer(data, received_data);
-
 
     categorise_received_data();
 
@@ -282,20 +297,18 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
     memset(response, 0, length);
 
     int req_enum;
-    dequeue(&req_queue, &req_enum);
+    int dequeue_status = dequeue(&req_queue, &req_enum);
 
-    response[0] = req_enum;
-
-    raw_hid_send(response, length);
-
-    print("Next raw HID request sent\n");
+    if (dequeue_status == 1) {
+        response[0] = req_enum;    
+        raw_hid_send(response, length);
+        print("Next raw HID request sent\n");
+    }
 
 }
 
-
 // This function runs to update the OLED display
 bool oled_task_user(void) {
-
     switch (curr_layer) {
         case _BASE:
             oled_write_ln("Home Layer", false);
@@ -326,21 +339,18 @@ bool oled_task_user(void) {
             write_pc_status_oled();
             break;
         case _NETWORK:
-            oled_write_ln("Markdown Layer", false);
-            oled_write_ln("\n", false);
-            oled_write_ln("wifi speed:", false);
-            oled_write_ln("\n", false);
-            oled_write_ln("\n", false);
+            oled_write_ln("Network Layer", false);
+            oled_write_ln("", false);
+            oled_write_ln("Speed Test:", false);
+            oled_write_ln("", false);
             write_network_oled();
             break;
     }
-
     
     return false;
 }
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-
     switch (keycode) {
         // Home macros
         case LOCK_COMPUTER: {

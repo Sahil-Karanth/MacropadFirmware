@@ -3,6 +3,8 @@ import hid
 import psutil
 import speedtest
 import time
+import threading
+from threading import Lock
 
 vendor_id     = 0xFEED
 product_id    = 0x9A25
@@ -14,6 +16,65 @@ report_length = 32
 PC_PERFORMANCE = 1
 NETWORK_SPEED = 2
 
+class NetworkSpeedTester:
+    def __init__(self):
+        self.lock = Lock()
+        self.is_testing = False
+        self.last_result = None
+        self.test_start_time = None
+        
+    def start_test(self):
+        """Start network speed test in background thread"""
+        with self.lock:
+            if self.is_testing:
+                return  # Test already in progress
+            
+            self.is_testing = True
+            self.test_start_time = time.time()
+            
+        # Start test in background thread
+        thread = threading.Thread(target=self._run_test)
+        thread.daemon = True
+        thread.start()
+    
+    def _run_test(self):
+        """Run the actual speed test"""
+        try:
+            print("Starting network speed test...")
+            st = speedtest.Speedtest()
+            
+            # Perform the download speed test
+            download_speed = round(st.download() / 1000000, 1)  # Convert to Mbps
+            
+            # Perform the upload speed test
+            upload_speed = round(st.upload() / 1000000, 1)  # Convert to Mbps
+            
+            with self.lock:
+                self.last_result = (download_speed, upload_speed)
+                self.is_testing = False
+                
+            print(f"Speed test completed: {download_speed}↓ {upload_speed}↑ Mbps")
+            
+        except Exception as e:
+            print(f"Speed test failed: {e}")
+            with self.lock:
+                self.last_result = None
+                self.is_testing = False
+    
+    def get_status(self):
+        """Get current status of speed test"""
+        with self.lock:
+            if self.is_testing:
+                elapsed = time.time() - self.test_start_time
+                return "testing", elapsed, None
+            elif self.last_result:
+                return "completed", 0, self.last_result
+            else:
+                return "idle", 0, None
+
+# Global speed tester instance
+speed_tester = NetworkSpeedTester()
+
 def get_raw_hid_interface():
     device_interfaces = hid.enumerate(vendor_id, product_id)
     raw_hid_interfaces = [i for i in device_interfaces if i['usage_page'] == usage_page and i['usage'] == usage]
@@ -24,8 +85,7 @@ def get_raw_hid_interface():
     interface = hid.device()
     interface.open_path(raw_hid_interfaces[0]['path'])
     
-    # Set non-blocking mode or use a timeout
-    interface.set_nonblocking(1)  # or use interface.read(report_length, timeout_ms=1000)
+    interface.set_nonblocking(1)
     
     return interface
 
@@ -51,9 +111,6 @@ def send_report_with_timeout(request_report):
         response_report = interface.read(report_length, timeout_ms=2000)
         
         if response_report:
-
-            # get next request to service
-
             print("Next service:")
             print(response_report)
         else:
@@ -72,40 +129,56 @@ def get_pc_stats():
 
     return message.encode('utf-8')
 
-def test_internet_speed():
-    try:
-        st = speedtest.Speedtest()
-        print("Testing internet speed...")
-
-        # Perform the download speed test
-        download_speed = round(st.download() / 1000000, 1)  # Convert to Mbps
-
-        # Perform the upload speed test
-        upload_speed = round(st.upload() / 1000000, 1)  # Convert to Mbps
-
-        message = f"{NETWORK_SPEED}{str(download_speed)}|{str(upload_speed)}"
-
-        return message.encode('utf-8')
-
-    except speedtest.SpeedtestException as e:
-        print("An error occurred during the speed test:", str(e))
+def get_network_status():
+    """Get current network test status and format for QMK"""
+    status, elapsed, result = speed_tester.get_status()
+    
+    if status == "testing":
+        # Show progress during test
+        elapsed_str = f"{int(elapsed)}s"
+        message = f"{NETWORK_SPEED}testing|{elapsed_str}"
+    elif status == "completed" and result:
+        # Show results
+        download, upload = result
+        message = f"{NETWORK_SPEED}{download}|{upload}"
+    else:
+        # No test data available
+        message = f"{NETWORK_SPEED}--|--"
+    
+    return message.encode('utf-8')
 
 def interpret_response(request_report):
-    if request_report[0] == PC_PERFORMANCE:
+    if not request_report or len(request_report) == 0:
         return get_report(get_pc_stats())
-    elif request_report[1] == NETWORK_SPEED:
-        return get_report(test_internet_speed())
+    
+    request_type = request_report[0]
+    
+    if request_type == PC_PERFORMANCE:
+        return get_report(get_pc_stats())
+    elif request_type == NETWORK_SPEED:
+        # Check if we need to start a new testefd
+        status, _, _ = speed_tester.get_status()
+        if status == "idle":
+            speed_tester.start_test()
+        
+        return get_report(get_network_status())
     else:
-        raise Exception("don't know how to service response")
+        # Unknown request, default to PC stats
+        return get_report(get_pc_stats())
 
 if __name__ == '__main__':
-
     # initial report to send
     request_report = get_report(get_pc_stats())
 
     while True:
-
-        # service request and get next one
-        response_report = send_report_with_timeout(request_report)
-        request_report = interpret_response(response_report)
-        time.sleep(5)
+        try:
+            # service request and get next one
+            response_report = send_report_with_timeout(request_report)
+            request_report = interpret_response(response_report)
+            time.sleep(1)
+        except KeyboardInterrupt:
+            print("\nShutting down...")
+            break
+        except Exception as e:
+            print(f"Error in main loop: {e}")
+            time.sleep(1)
