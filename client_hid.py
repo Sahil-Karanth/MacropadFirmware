@@ -124,8 +124,8 @@ class SpotifyManager:
             
             if current and current.get('is_playing'):
                 item = current['item']
-                song_name = item['name'][:30]  # Limit length for display
-                artists = ', '.join([artist['name'] for artist in item['artists']])[:30]
+                song_name = item['name'][:40]  # Limit length for display
+                artists = ', '.join([artist['name'] for artist in item['artists']])[:40]
                 
                 self.last_song_info = (song_name, artists)
                 self.last_update_time = current_time
@@ -178,7 +178,7 @@ def send_report_with_timeout(request_report):
         interface.write(request_report)
         
         # Use read with timeout (timeout in milliseconds)
-        response_report = interface.read(report_length, timeout_ms=2000)
+        response_report = interface.read(report_length, timeout_ms=1000)
         
         if response_report:
             print("Next service:")
@@ -192,9 +192,10 @@ def send_report_with_timeout(request_report):
         interface.close()
         return response_report
 
+psutil.cpu_percent(interval=None) 
 def get_pc_stats():
     ram_percent = psutil.virtual_memory().percent
-    cpu_percent = psutil.cpu_percent(interval=1)
+    cpu_percent = psutil.cpu_percent(interval=None) 
     message = f"{PC_PERFORMANCE}{str(ram_percent)}|{str(cpu_percent)}"
 
     return message.encode('utf-8')
@@ -264,10 +265,10 @@ if __name__ == '__main__':
                 continue
 
             request_report = interpret_response(response_report)
-            time.sleep(3)
+            time.sleep(1)
         except KeyboardInterrupt:
             print("\nShutting down...")
             break
         except Exception as e:
             print(f"Error in main loop: {e}")
-            time.sleep(3)
+            time.sleep(1)

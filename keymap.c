@@ -66,10 +66,15 @@ enum PC_req_types {
 
 #define MAX_QUEUE_SIZE 100
 
+// typedef struct {
+//     int data[MAX_QUEUE_SIZE];
+//     int front;
+//     int rear;
+//     int size;
+// } queue_t;
+
 typedef struct {
     int data[MAX_QUEUE_SIZE];
-    int front;
-    int rear;
     int size;
 } queue_t;
 
@@ -92,9 +97,9 @@ void write_pc_status_oled(void);
 void write_network_oled(void);
 void write_song_info_oled(void);
 
+
+
 void initQueue(queue_t *q) {
-    q->front = 0;
-    q->rear = 0;
     q->size = 0;
 }
 
@@ -106,21 +111,51 @@ int isEmpty(queue_t *q) {
     return q->size == 0;
 }
 
+// Push onto the stack (top is at size - 1)
 int enqueue(queue_t *q, int value) {
     if (isFull(q)) return 0;
-    q->data[q->rear] = value;
-    q->rear = (q->rear + 1) % MAX_QUEUE_SIZE;
-    q->size++;
+    q->data[q->size++] = value;
     return 1;
 }
 
+// Pop from the stack (LIFO)
 int dequeue(queue_t *q, int *value) {
     if (isEmpty(q)) return 0;
-    *value = q->data[q->front];
-    q->front = (q->front + 1) % MAX_QUEUE_SIZE;
-    q->size--;
+    *value = q->data[--q->size];
     return 1;
 }
+
+// void initQueue(queue_t *q) {
+//     q->front = 0;
+//     q->rear = 0;
+//     q->size = 0;
+// }
+
+// int isFull(queue_t *q) {
+//     return q->size == MAX_QUEUE_SIZE;
+// }
+
+// int isEmpty(queue_t *q) {
+//     return q->size == 0;
+// }
+
+// // todo: DEFINE maybe_enqueue which only enqueues if it's not an adjancent duplicate value
+
+// int enqueue(queue_t *q, int value) {
+//     if (isFull(q)) return 0;
+//     q->data[q->rear] = value;
+//     q->rear = (q->rear + 1) % MAX_QUEUE_SIZE;
+//     q->size++;
+//     return 1;
+// }
+
+// int dequeue(queue_t *q, int *value) {
+//     if (isEmpty(q)) return 0;
+//     *value = q->data[q->front];
+//     q->front = (q->front + 1) % MAX_QUEUE_SIZE;
+//     q->size--;
+//     return 1;
+// }
 
 // the request queue (initially empty)
 queue_t req_queue;
@@ -305,7 +340,7 @@ void keyboard_post_init_user(void) {
 
 void matrix_scan_user(void) {
     // Check if 5 seconds have passed since the last request
-    if (timer_elapsed32(pc_status_timer) > 5000) {
+    if (timer_elapsed32(pc_status_timer) > 2000) {
         // Reset the timer
         pc_status_timer = timer_read32();
 
