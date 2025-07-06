@@ -13,7 +13,7 @@
 // Declarations and Globals
 // -------------------------------------------------------------------------- //
 
-#define NUM_LAYERS 5
+#define NUM_LAYERS 6
 #define HID_BUFFER_SIZE 33
 
 // Globals for Raw HID communication
@@ -31,6 +31,7 @@ enum layer_names {
     _GIT,
     _MARKDOWN,
     _NETWORK,
+    _SPOTIFY,
 };
 
 int curr_layer = _BASE;
@@ -345,6 +346,13 @@ bool oled_task_user(void) {
             oled_write_ln("", false);
             write_network_oled();
             break;
+        case _SPOTIFY:
+            oled_write_ln("Music Player", false);
+            oled_write_ln("< previous", false);
+            oled_write_ln("v pause/play", false);
+            oled_write_ln("> skip", false);
+            write_network_oled();
+            break;
     }
     
     return false;
@@ -425,7 +433,12 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_NETWORK] = LAYOUT(
         KC_MEDIA_PLAY_PAUSE,
         TD(TD_CYCLE_LAYERS),
-        KC_D, KC_E, KC_F
+        KC_D, KC_MEDIA_PLAY_PAUSE, KC_F
+    ),
+    [_SPOTIFY] = LAYOUT(
+        KC_MEDIA_PLAY_PAUSE,
+        TD(TD_CYCLE_LAYERS),
+        KC_MEDIA_NEXT_TRACK, KC_MEDIA_PLAY_PAUSE, KC_MEDIA_PREV_TRACK
     ),    
 };
 
