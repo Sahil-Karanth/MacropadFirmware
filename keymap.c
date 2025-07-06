@@ -15,11 +15,13 @@
 
 #define NUM_LAYERS 6
 #define HID_BUFFER_SIZE 33
+#define NUM_SCREEN_LINES 6
 
 // Globals for Raw HID communication
 char received_data[HID_BUFFER_SIZE] = "--";
 char received_pc_stats[HID_BUFFER_SIZE] = "--";
 char received_network_stats[HID_BUFFER_SIZE] = "--";
+char received_song_info[HID_BUFFER_SIZE] = "--";
 
 // volatile bool has_new_data = false;
 static uint32_t pc_status_timer = 0;
@@ -31,7 +33,7 @@ enum layer_names {
     _GIT,
     _MARKDOWN,
     _NETWORK,
-    _SPOTIFY,
+    _MEDIA,
 };
 
 int curr_layer = _BASE;
@@ -88,6 +90,7 @@ void copy_buffer(uint8_t *src_buf, char *dest_buf);
 void categorise_received_data(void);
 void write_pc_status_oled(void);
 void write_network_oled(void);
+void write_song_info_oled(void);
 
 void initQueue(queue_t *q) {
     q->front = 0;
@@ -213,6 +216,9 @@ void categorise_received_data(void) {
         case NETWORK_TEST:
             copy_buffer((uint8_t*)(received_data + 1), received_network_stats);
             break;
+        case CURRENT_SONG:
+            copy_buffer((uint8_t*)(received_data + 1), received_song_info);
+            break;
     }
 }
 
@@ -228,12 +234,11 @@ void write_pc_status_oled(void) {
     // Format the display string and save it for future display
     snprintf(pc_status_str, sizeof(pc_status_str), "RAM:%s CPU:%s", ram_buf, cpu_buf);
 
-    oled_write_ln("\n", false);
     oled_write_ln(pc_status_str, false);
 }
 
 void write_network_oled(void) {
-    static char network_display[200] = "Press key to test";
+    static char network_display[200] = "No test data";
     
     // Check if we have received network data
     if (strcmp(received_network_stats, "--") != 0) {
@@ -259,6 +264,37 @@ void write_network_oled(void) {
     oled_write_ln(network_display, false);
 }
 
+void write_song_info_oled(void) {
+    static char song_display[200] = "No song playing";
+    
+    // Check if we have received song data
+    if (strcmp(received_song_info, "--") != 0) {
+        char song_name[32] = "--";
+        char artist_name[32] = "--";
+        
+        // Parse the received data (song|artist format)
+        sscanf(received_song_info, "%31[^|]|%31[^\n]", song_name, artist_name);
+        
+        if (strcmp(song_name, "--") != 0 && strcmp(artist_name, "--") != 0) {
+            snprintf(song_display, sizeof(song_display), 
+                    "%s\n%s", song_name, artist_name);
+        } else {
+            strcpy(song_display, "No song playing");
+        }
+    }
+    
+    oled_write_ln(song_display, false);
+
+}
+
+void oled_full_clear(void) {
+    oled_set_cursor(0, 0);
+    for (int i = 0; i < NUM_SCREEN_LINES; i++) {
+        oled_write_ln("", false);
+    }
+    oled_set_cursor(0, 0);
+}
+
 // -------------------------------------------------------------------------- //
 // QMK Override Functions
 // -------------------------------------------------------------------------- //
@@ -279,6 +315,9 @@ void matrix_scan_user(void) {
         } else if (curr_layer == 4) {
             // Always request network status when on network layer
             enqueue(&req_queue, NETWORK_TEST);
+        } else if (curr_layer == 5) {
+            // Always request song info when on media layer
+            enqueue(&req_queue, CURRENT_SONG);
         }
 
         print("byte enqueued\n");
@@ -298,24 +337,32 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
     memset(response, 0, length);
 
     int req_enum;
-    int dequeue_status = dequeue(&req_queue, &req_enum);
+    dequeue(&req_queue, &req_enum);
 
-    if (dequeue_status == 1) {
-        response[0] = req_enum;    
-        raw_hid_send(response, length);
-        print("Next raw HID request sent\n");
-    }
+    response[0] = req_enum;
 
+    raw_hid_send(response, length);
+
+    print("Next raw HID request sent\n");
 }
 
 // This function runs to update the OLED display
 bool oled_task_user(void) {
+    static int last_layer = -1;
+    
+    // Only clear when layer changes to reduce flicker
+    if (last_layer != curr_layer) {
+        oled_clear();
+        last_layer = curr_layer;
+    }
+
     switch (curr_layer) {
         case _BASE:
             oled_write_ln("Home Layer", false);
             oled_write_ln("< lock computer", false);
             oled_write_ln("v open vscode", false);
             oled_write_ln("> email", false);
+            oled_write_ln("", false);
             write_pc_status_oled();
             break;
         case _PROGRAMING:
@@ -323,6 +370,7 @@ bool oled_task_user(void) {
             oled_write_ln("< comment separator", false);
             oled_write_ln("v doxygen comment", false);
             oled_write_ln("> UNIMPLEMENTED", false);
+            oled_write_ln("", false);
             write_pc_status_oled();
             break;
         case _GIT:
@@ -330,6 +378,7 @@ bool oled_task_user(void) {
             oled_write_ln("< commit all", false);
             oled_write_ln("v commit tracked", false);
             oled_write_ln("> git status", false);
+            oled_write_ln("", false);
             write_pc_status_oled();
             break;
         case _MARKDOWN:
@@ -337,6 +386,7 @@ bool oled_task_user(void) {
             oled_write_ln("< UNIMPLEMENTED", false);
             oled_write_ln("v UNIMPLEMENTED", false);
             oled_write_ln("> UNIMPLEMENTED", false);
+            oled_write_ln("", false);
             write_pc_status_oled();
             break;
         case _NETWORK:
@@ -346,15 +396,14 @@ bool oled_task_user(void) {
             oled_write_ln("", false);
             write_network_oled();
             break;
-        case _SPOTIFY:
-            oled_write_ln("Music Player", false);
-            oled_write_ln("< previous", false);
-            oled_write_ln("v pause/play", false);
-            oled_write_ln("> skip", false);
-            write_network_oled();
+        case _MEDIA:
+            oled_write_ln("Media Player", false);
+            oled_write_ln("", false);
+            oled_write_ln("", false);
+            write_song_info_oled();
             break;
     }
-    
+
     return false;
 }
 
@@ -433,9 +482,9 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_NETWORK] = LAYOUT(
         KC_MEDIA_PLAY_PAUSE,
         TD(TD_CYCLE_LAYERS),
-        KC_D, KC_MEDIA_PLAY_PAUSE, KC_F
+        KC_D, KC_E, KC_F
     ),
-    [_SPOTIFY] = LAYOUT(
+    [_MEDIA] = LAYOUT(
         KC_MEDIA_PLAY_PAUSE,
         TD(TD_CYCLE_LAYERS),
         KC_MEDIA_NEXT_TRACK, KC_MEDIA_PLAY_PAUSE, KC_MEDIA_PREV_TRACK
