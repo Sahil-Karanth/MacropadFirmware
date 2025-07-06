@@ -1,4 +1,6 @@
 import sys
+from dotenv import load_dotenv
+import os
 import hid
 import psutil
 import speedtest
@@ -7,6 +9,8 @@ from spotipy.oauth2 import SpotifyOAuth
 import time
 import threading
 from threading import Lock
+
+load_dotenv()
 
 vendor_id     = 0xFEED
 product_id    = 0x9A25
@@ -21,8 +25,8 @@ CURRENT_SONG = 3
 COULD_NOT_CONNECT = -1
 
 # Spotify configuration - add your credentials here
-SPOTIFY_CLIENT_ID = ""  # Add your Spotify client ID
-SPOTIFY_CLIENT_SECRET = ""  # Add your Spotify client secret
+SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")  # Add your Spotify client ID
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")  # Add your Spotify client secret
 SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback/"
 
 class NetworkSpeedTester:
