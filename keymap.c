@@ -359,6 +359,7 @@ bool oled_task_user(void) {
     switch (curr_layer) {
         case _BASE:
             oled_write_ln("Home Layer", false);
+            oled_write_ln("", false);
             oled_write_ln("< lock computer", false);
             oled_write_ln("v open vscode", false);
             oled_write_ln("> email", false);
@@ -367,6 +368,7 @@ bool oled_task_user(void) {
             break;
         case _PROGRAMING:
             oled_write_ln("Programming Layer", false);
+            oled_write_ln("", false);
             oled_write_ln("< comment separator", false);
             oled_write_ln("v doxygen comment", false);
             oled_write_ln("> UNIMPLEMENTED", false);
@@ -375,6 +377,7 @@ bool oled_task_user(void) {
             break;
         case _GIT:
             oled_write_ln("Git Layer", false);
+            oled_write_ln("", false);
             oled_write_ln("< commit all", false);
             oled_write_ln("v commit tracked", false);
             oled_write_ln("> git status", false);
@@ -383,6 +386,7 @@ bool oled_task_user(void) {
             break;
         case _MARKDOWN:
             oled_write_ln("Markdown Layer", false);
+            oled_write_ln("", false);
             oled_write_ln("< UNIMPLEMENTED", false);
             oled_write_ln("v UNIMPLEMENTED", false);
             oled_write_ln("> UNIMPLEMENTED", false);

@@ -24,9 +24,8 @@ NETWORK_SPEED = 2
 CURRENT_SONG = 3
 COULD_NOT_CONNECT = -1
 
-# Spotify configuration - add your credentials here
-SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")  # Add your Spotify client ID
-SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")  # Add your Spotify client secret
+SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback/"
 
 class NetworkSpeedTester:
@@ -155,7 +154,7 @@ def get_raw_hid_interface():
     interface.open_path(raw_hid_interfaces[0]['path'])
     
     # Set non-blocking mode or use a timeout
-    interface.set_nonblocking(1)  # or use interface.read(report_length, timeout_ms=1000)
+    interface.set_nonblocking(1)
     
     return interface
 
