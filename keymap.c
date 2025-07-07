@@ -268,6 +268,7 @@ void write_network_oled(void) {
     }
     
     oled_write_ln(network_display, false);
+    oled_write_ln("", false);
 }
 
 void write_song_info_oled(void) {

@@ -71,10 +71,10 @@ class NetworkSpeedTester:
             st = speedtest.Speedtest()
             
             # Perform the download speed test
-            download_speed = round(st.download() / 1000000, 1)  # Convert to Mbps
+            download_speed = round(st.download() / 1000000, 1)
             
             # Perform the upload speed test
-            upload_speed = round(st.upload() / 1000000, 1)  # Convert to Mbps
+            upload_speed = round(st.upload() / 1000000, 1)
             
             with self.lock:
                 self.last_result = (download_speed, upload_speed)
