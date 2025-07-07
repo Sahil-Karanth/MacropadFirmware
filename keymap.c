@@ -52,7 +52,8 @@ enum custom_keycodes {
 };
 
 enum tap_dance_codes {
-    TD_CYCLE_LAYERS
+    CYCLE_LAYERS,
+    CYCLE_LAYERS_BACKWARDS,
 };
 
 // -------------------------------------------------------------------------- //
@@ -86,7 +87,7 @@ int isFull(queue_t *q);
 int isEmpty(queue_t *q);
 int enqueue(queue_t *q, int value);
 int dequeue(queue_t *q, int *value);
-void cycleLayers(tap_dance_state_t *state, void *user_data);
+void cycleLayers(bool forward);
 void handleOpenVscode(keyrecord_t *record);
 void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly);
 void handleGitStatus(keyrecord_t *record);
@@ -134,11 +135,11 @@ queue_t req_queue;
 // Helper Functions
 // -------------------------------------------------------------------------- //
 
-void cycleLayers(tap_dance_state_t *state, void *user_data) {
-    if (state->count == 1) {
+void cycleLayers(bool forward) {
+    if (forward) {
         curr_layer = (curr_layer + 1) % NUM_LAYERS;
         layer_move(curr_layer);
-    } else if (state->count == 2) {
+    } else {
         curr_layer = (curr_layer - 1 + NUM_LAYERS) % NUM_LAYERS;
         layer_move(curr_layer);
     }
@@ -315,6 +316,25 @@ void keyboard_post_init_user(void) {
     rgblight_sethsv(HSV_RED);
 }
 
+
+#define ENCODER_LAYER_SKIP 2
+bool encoder_update_user(uint8_t index, bool clockwise) {
+    static uint8_t encoder_tick = 0;
+
+    encoder_tick++;
+    if (encoder_tick % ENCODER_LAYER_SKIP != 0) {
+        return false;
+    }
+
+    if (!clockwise) {
+        cycleLayers(true);
+    } else {
+        cycleLayers(false);
+    }
+
+    return false;
+}
+
 void matrix_scan_user(void) {
     // Check if 2 seconds have passed since the last request
     if (timer_elapsed32(pc_status_timer) > 2000 && received_first_communication) {
@@ -366,7 +386,6 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
 bool oled_task_user(void) {
     static int last_layer = -1;
     
-    // Only clear when layer changes to reduce flicker
     if (last_layer != curr_layer) {
         oled_clear();
         last_layer = curr_layer;
@@ -492,40 +511,40 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_BASE] = LAYOUT(
-        KC_MEDIA_PLAY_PAUSE,
-        TD(TD_CYCLE_LAYERS),
+        KC_D,
+        KC_D,
         EMAIL, VSCODE_OPEN, LOCK_COMPUTER
     ),
     [_PROGRAMING] = LAYOUT(
         KC_MEDIA_PLAY_PAUSE,
-        TD(TD_CYCLE_LAYERS),
+        KC_D,
         KC_D, DOXYGEN_COMMENT, COMMENT_SEPARATOR
     ),
     [_GIT] = LAYOUT(
         KC_MEDIA_PLAY_PAUSE,
-        TD(TD_CYCLE_LAYERS),
+        KC_D,
         GIT_STATUS, GIT_COMMIT_TRACKED, GIT_COMMIT_ALL
     ),
     [_MARKDOWN] = LAYOUT(
         KC_MEDIA_PLAY_PAUSE,
-        TD(TD_CYCLE_LAYERS),
+        KC_D,
         KC_D, KC_E, KC_F
     ),
     [_NETWORK] = LAYOUT(
         KC_MEDIA_PLAY_PAUSE,
-        TD(TD_CYCLE_LAYERS),
+        KC_D,
         KC_D, REQUEST_RETEST_KEY, KC_F
     ),
     [_MEDIA] = LAYOUT(
         KC_MEDIA_PLAY_PAUSE,
-        TD(TD_CYCLE_LAYERS),
+        KC_D,
         KC_MEDIA_NEXT_TRACK, KC_MEDIA_PLAY_PAUSE, KC_MEDIA_PREV_TRACK
     ),    
 };
 
-tap_dance_action_t tap_dance_actions[] = {
-    [TD_CYCLE_LAYERS] = ACTION_TAP_DANCE_FN(cycleLayers),
-};
+// tap_dance_action_t tap_dance_actions[] = {
+//     [TD_CYCLE_LAYERS] = ACTION_TAP_DANCE_FN(cycleLayers),
+// };
 
 const uint16_t PROGMEM backlight_combo[] = {KC_UP, KC_DOWN, COMBO_END};
 combo_t key_combos[] = {
