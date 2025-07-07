@@ -54,6 +54,9 @@ enum custom_keycodes {
     REQUEST_RETEST_KEY,
     ARROW_TOGGLE,
     SNIPPING_TOOL,
+    CODE_BLOCK,
+    LATEX_BLOCK,
+    LATEX_BLOCK_INLINE,
 };
 
 // -------------------------------------------------------------------------- //
@@ -221,6 +224,37 @@ void handleSnippingTool(keyrecord_t *record) {
         tap_code16(LGUI(LSFT(KC_S)));
     }
 }
+
+void handleCodeBlock(keyrecord_t *record) {
+    if (record -> event.pressed) {
+        for (int i = 0; i < 3; i++) {
+            tap_code16(KC_GRAVE);
+        }
+    }
+}
+
+void handleLatexBlock(keyrecord_t *record) {
+    if (record->event.pressed) {
+        for (int i = 0; i < 4; i++) {
+            tap_code16(LSFT(KC_4));
+        }
+        tap_code(KC_LEFT);
+        tap_code(KC_LEFT);
+        tap_code(KC_ENTER);
+        tap_code(KC_ENTER);
+        tap_code(KC_UP);
+    }
+}
+
+void handleLatexInline(keyrecord_t *record) {
+    if (record -> event.pressed) {
+        for (int i = 0; i < 2; i++) {
+            tap_code16(LSFT(KC_4));
+        }
+        tap_code(KC_LEFT);
+    }
+}
+
 
 void copy_buffer(uint8_t *src_buf, char *dest_buf) {
     memcpy(dest_buf, (char*)src_buf, HID_BUFFER_SIZE - 1);
@@ -443,9 +477,9 @@ bool oled_task_user(void) {
             rgblight_sethsv(HSV_PURPLE);
             oled_write_ln("Markdown Layer", false);
             oled_write_ln("", false);
-            oled_write_ln("< UNIMPLEMENTED", false);
-            oled_write_ln("v UNIMPLEMENTED", false);
-            oled_write_ln("> UNIMPLEMENTED", false);
+            oled_write_ln("< code block", false);
+            oled_write_ln("v latex block", false);
+            oled_write_ln("> latex inline", false);
             oled_write_ln("", false);
             write_pc_status_oled();
             break;
@@ -492,7 +526,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         }
         case EMAIL: {
             if (record->event.pressed) {
-                send_string("skkaranth1@gmail.com");
+                send_string("skkaranth1\"gmail.com");
             }
             return false;
         }
@@ -524,6 +558,19 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         }
         case TODO_COMMENT: {
             handleDateTodoComment(record);
+            return false;
+        }
+        // markdown (obsidian) macros
+        case CODE_BLOCK: {
+            handleCodeBlock(record);
+            return false;
+        }
+        case LATEX_BLOCK: {
+            handleLatexBlock(record);
+            return false;
+        }
+        case LATEX_BLOCK_INLINE: {
+            handleLatexInline(record);
             return false;
         }
         // To arrow layer
@@ -570,7 +617,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_MARKDOWN] = LAYOUT(
         ARROW_TOGGLE,
         SNIPPING_TOOL,
-        KC_D, KC_D, KC_D
+        LATEX_BLOCK_INLINE, LATEX_BLOCK, CODE_BLOCK
     ),
     [_NETWORK] = LAYOUT(
         ARROW_TOGGLE,
