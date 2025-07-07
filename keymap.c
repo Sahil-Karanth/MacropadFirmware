@@ -194,29 +194,16 @@ void handleDoxygenComment(keyrecord_t *record) {
 }
 
 void handleArrowToggle(keyrecord_t *record) {
-    if (curr_layer != _ARROWS) {
-        return_layer = curr_layer;
-        curr_layer = _ARROWS;
-    } else {
-        curr_layer = return_layer;
+    if (record -> event.pressed) {
+        if (curr_layer != _ARROWS) {
+            return_layer = curr_layer;
+            curr_layer = _ARROWS;
+        } else {
+            curr_layer = return_layer;
+        }
+        layer_move(curr_layer);
     }
-
-    layer_move(curr_layer);
 }
-
-
-// // Tap dance finished function for Up arrow
-// void dance_arrow_up_finished(tap_dance_state_t *state, void *user_data) {
-//     if (state->count == 1) {
-//         tap_code(KC_UP);
-//     } else if (state->count == 2) {
-//         layer_move(_BASE);
-//     }
-// }
-
-// void dance_arrow_up_reset(tap_dance_state_t *state, void *user_data) {
-//     // No reset needed
-// }
 
 void copy_buffer(uint8_t *src_buf, char *dest_buf) {
     memcpy(dest_buf, (char*)src_buf, HID_BUFFER_SIZE - 1);
@@ -516,14 +503,12 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             handleDoxygenComment(record);
             return false;
         }
-        // case TO_ARROW_LAYER: {
-        //     handleArrowToggle(record);
-        //     return false;
-        // }
+        // To arrow layer
         case ARROW_TOGGLE: {
             handleArrowToggle(record);
             return false;
         }
+        // Network layer macro
         case REQUEST_RETEST_KEY: {
             if (record->event.pressed) {
                 enqueue(&req_queue, REQUEST_RETEST);
@@ -576,12 +561,6 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_RIGHT, KC_DOWN, KC_LEFT
     ),    
 };
-
-
-// tap_dance_action_t tap_dance_actions[] = {
-//     [TD_ARROW_UP] = ACTION_TAP_DANCE_FN(handleArrowToggle),
-// };
-
 
 const uint16_t PROGMEM backlight_combo[] = {KC_UP, KC_DOWN, COMBO_END};
 combo_t key_combos[] = {
