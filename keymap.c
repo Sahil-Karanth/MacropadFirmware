@@ -13,7 +13,7 @@
 // Declarations and Globals
 // -------------------------------------------------------------------------- //
 
-#define NUM_LAYERS 6
+#define NUM_LAYERS_TO_CYCLE 6
 #define HID_BUFFER_SIZE 33
 #define NUM_SCREEN_LINES 6
 
@@ -34,9 +34,11 @@ enum layer_names {
     _MARKDOWN,
     _NETWORK,
     _MEDIA,
+    _ARROWS,
 };
 
 int curr_layer = _BASE;
+int return_layer = _BASE; // for arrow toggle
 
 enum custom_keycodes {
     LOCK_COMPUTER = SAFE_RANGE,
@@ -44,17 +46,16 @@ enum custom_keycodes {
     EMAIL,
     COMMENT_SEPARATOR,
     DOXYGEN_COMMENT,
-    NAME_CASE_CHANGE,
     GIT_COMMIT_ALL,
     GIT_COMMIT_TRACKED,
     GIT_STATUS,
     REQUEST_RETEST_KEY,
+    ARROW_TOGGLE,
 };
 
-enum tap_dance_codes {
-    CYCLE_LAYERS,
-    CYCLE_LAYERS_BACKWARDS,
-};
+// enum tap_dance_codes {
+//     TD_ARROW_UP,
+// };
 
 // -------------------------------------------------------------------------- //
 // Raw HID Declarations
@@ -68,13 +69,6 @@ enum PC_req_types {
 };
 
 #define MAX_QUEUE_SIZE 100
-
-// typedef struct {
-//     int data[MAX_QUEUE_SIZE];
-//     int front;
-//     int rear;
-//     int size;
-// } queue_t;
 
 typedef struct {
     int data[MAX_QUEUE_SIZE];
@@ -93,14 +87,12 @@ void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly);
 void handleGitStatus(keyrecord_t *record);
 void handleCommentSep(keyrecord_t *record);
 void handleDoxygenComment(keyrecord_t *record);
-void handleNameCaseChange(keyrecord_t *record);
+void handleArrowToggle(keyrecord_t *record);
 void copy_buffer(uint8_t *src_buf, char *dest_buf);
 void categorise_received_data(void);
 void write_pc_status_oled(void);
 void write_network_oled(void);
 void write_song_info_oled(void);
-
-
 
 void initQueue(queue_t *q) {
     q->size = 0;
@@ -137,10 +129,10 @@ queue_t req_queue;
 
 void cycleLayers(bool forward) {
     if (forward) {
-        curr_layer = (curr_layer + 1) % NUM_LAYERS;
+        curr_layer = (curr_layer + 1) % NUM_LAYERS_TO_CYCLE;
         layer_move(curr_layer);
     } else {
-        curr_layer = (curr_layer - 1 + NUM_LAYERS) % NUM_LAYERS;
+        curr_layer = (curr_layer - 1 + NUM_LAYERS_TO_CYCLE) % NUM_LAYERS_TO_CYCLE;
         layer_move(curr_layer);
     }
 }
@@ -201,11 +193,30 @@ void handleDoxygenComment(keyrecord_t *record) {
     }
 }
 
-void handleNameCaseChange(keyrecord_t *record) {
-    if (record->event.pressed) {
-        oled_write_ln(received_data, false);
+void handleArrowToggle(keyrecord_t *record) {
+    if (curr_layer != _ARROWS) {
+        return_layer = curr_layer;
+        curr_layer = _ARROWS;
+    } else {
+        curr_layer = return_layer;
     }
+
+    layer_move(curr_layer);
 }
+
+
+// // Tap dance finished function for Up arrow
+// void dance_arrow_up_finished(tap_dance_state_t *state, void *user_data) {
+//     if (state->count == 1) {
+//         tap_code(KC_UP);
+//     } else if (state->count == 2) {
+//         layer_move(_BASE);
+//     }
+// }
+
+// void dance_arrow_up_reset(tap_dance_state_t *state, void *user_data) {
+//     // No reset needed
+// }
 
 void copy_buffer(uint8_t *src_buf, char *dest_buf) {
     memcpy(dest_buf, (char*)src_buf, HID_BUFFER_SIZE - 1);
@@ -288,6 +299,10 @@ void write_song_info_oled(void) {
                     "%s\n%s", song_name, artist_name);
         } else {
             strcpy(song_display, "No song playing");
+            oled_write_ln(song_display, false);
+            oled_write_ln("", false);
+            oled_write_ln("", false);
+            return;
         }
     }
     
@@ -342,12 +357,12 @@ void matrix_scan_user(void) {
         pc_status_timer = timer_read32();
 
         // queue the appropriate request based on current layer
-        if (curr_layer <= 3) {
+        if (curr_layer <= _MARKDOWN) {
             enqueue(&req_queue, PC_PERFORMANCE);
-        } else if (curr_layer == 4) {
+        } else if (curr_layer == _NETWORK) {
             // Always request network status when on network layer
             enqueue(&req_queue, NETWORK_TEST);
-        } else if (curr_layer == 5) {
+        } else if (curr_layer == _MEDIA) {
             // Always request song info when on media layer
             enqueue(&req_queue, CURRENT_SONG);
         }
@@ -447,6 +462,16 @@ bool oled_task_user(void) {
             oled_write_ln("", false);
             write_song_info_oled();
             break;
+        case _ARROWS:
+            rgblight_sethsv(HSV_CYAN);
+            oled_write_ln("Arrow Layer", false);
+            oled_write_ln("", false);
+            oled_write_ln("", false);
+            oled_write_ln("", false);
+            oled_write_ln("", false);
+            oled_write_ln("", false);
+            oled_write_ln("", false);
+            break;
     }
 
     return false;
@@ -491,8 +516,12 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             handleDoxygenComment(record);
             return false;
         }
-        case NAME_CASE_CHANGE: {
-            handleNameCaseChange(record);
+        // case TO_ARROW_LAYER: {
+        //     handleArrowToggle(record);
+        //     return false;
+        // }
+        case ARROW_TOGGLE: {
+            handleArrowToggle(record);
             return false;
         }
         case REQUEST_RETEST_KEY: {
@@ -502,6 +531,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             return false;
         }
     }
+
     return true;
 }
 
@@ -511,42 +541,50 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_BASE] = LAYOUT(
-        KC_D,
-        KC_D,
+        ARROW_TOGGLE,
+        ARROW_TOGGLE,
         EMAIL, VSCODE_OPEN, LOCK_COMPUTER
     ),
     [_PROGRAMING] = LAYOUT(
-        KC_MEDIA_PLAY_PAUSE,
-        KC_D,
+        ARROW_TOGGLE,
+        ARROW_TOGGLE,
         KC_D, DOXYGEN_COMMENT, COMMENT_SEPARATOR
     ),
     [_GIT] = LAYOUT(
-        KC_MEDIA_PLAY_PAUSE,
-        KC_D,
+        ARROW_TOGGLE,
+        ARROW_TOGGLE,
         GIT_STATUS, GIT_COMMIT_TRACKED, GIT_COMMIT_ALL
     ),
     [_MARKDOWN] = LAYOUT(
-        KC_MEDIA_PLAY_PAUSE,
-        KC_D,
+        ARROW_TOGGLE,
+        ARROW_TOGGLE,
         KC_D, KC_E, KC_F
     ),
     [_NETWORK] = LAYOUT(
-        KC_MEDIA_PLAY_PAUSE,
-        KC_D,
+        ARROW_TOGGLE,
+        ARROW_TOGGLE,
         KC_D, REQUEST_RETEST_KEY, KC_F
     ),
     [_MEDIA] = LAYOUT(
-        KC_MEDIA_PLAY_PAUSE,
-        KC_D,
+        ARROW_TOGGLE,
+        ARROW_TOGGLE,
         KC_MEDIA_NEXT_TRACK, KC_MEDIA_PLAY_PAUSE, KC_MEDIA_PREV_TRACK
+    ),
+    [_ARROWS] = LAYOUT(
+        ARROW_TOGGLE,
+        KC_UP,
+        KC_RIGHT, KC_DOWN, KC_LEFT
     ),    
 };
 
+
 // tap_dance_action_t tap_dance_actions[] = {
-//     [TD_CYCLE_LAYERS] = ACTION_TAP_DANCE_FN(cycleLayers),
+//     [TD_ARROW_UP] = ACTION_TAP_DANCE_FN(handleArrowToggle),
 // };
+
 
 const uint16_t PROGMEM backlight_combo[] = {KC_UP, KC_DOWN, COMBO_END};
 combo_t key_combos[] = {
     COMBO(backlight_combo, BL_STEP)
 };
+
