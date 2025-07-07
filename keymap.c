@@ -46,16 +46,15 @@ enum custom_keycodes {
     EMAIL,
     COMMENT_SEPARATOR,
     DOXYGEN_COMMENT,
+    TODO_COMMENT,
     GIT_COMMIT_ALL,
     GIT_COMMIT_TRACKED,
     GIT_STATUS,
+    GIT_LOG,
     REQUEST_RETEST_KEY,
     ARROW_TOGGLE,
+    SNIPPING_TOOL,
 };
-
-// enum tap_dance_codes {
-//     TD_ARROW_UP,
-// };
 
 // -------------------------------------------------------------------------- //
 // Raw HID Declarations
@@ -84,7 +83,7 @@ int dequeue(queue_t *q, int *value);
 void cycleLayers(bool forward);
 void handleOpenVscode(keyrecord_t *record);
 void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly);
-void handleGitStatus(keyrecord_t *record);
+void handleCommandRun(keyrecord_t *record, char *command_str);
 void handleCommentSep(keyrecord_t *record);
 void handleDoxygenComment(keyrecord_t *record);
 void handleArrowToggle(keyrecord_t *record);
@@ -165,18 +164,30 @@ void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly) {
     }
 }
 
-void handleGitStatus(keyrecord_t *record) {
+void handleCommandRun(keyrecord_t *record, char *command_str) {
     if (record->event.pressed) {
         tap_code16(LCTL(KC_GRAVE));
         wait_ms(100);
-        send_string("git status");
+        send_string(command_str);
         tap_code(KC_ENTER);
+    }
+}
+
+void handleDateTodoComment(keyrecord_t *record) {
+    if (record -> event.pressed) {
+        send_string("// TODO (");
+        send_string(__DATE__);
+        send_string(" ");
+        send_string(__TIME__);
+        send_string("): ");
     }
 }
 
 void handleCommentSep(keyrecord_t *record) {
     if (record->event.pressed) {
-        send_string("// -------------------------------------------------------------------------- //");
+        send_string("// -------------------------------------------------------------------------- //\n");
+        send_string("// SECTION_TITLE //\n");
+        send_string("// -------------------------------------------------------------------------- //\n");
     }
 }
 
@@ -202,6 +213,12 @@ void handleArrowToggle(keyrecord_t *record) {
             curr_layer = return_layer;
         }
         layer_move(curr_layer);
+    }
+}
+
+void handleSnippingTool(keyrecord_t *record) {
+    if (record -> event.pressed) {
+        tap_code16(LGUI(LSFT(KC_S)));
     }
 }
 
@@ -353,8 +370,6 @@ void matrix_scan_user(void) {
             // Always request song info when on media layer
             enqueue(&req_queue, CURRENT_SONG);
         }
-
-        print("byte enqueued\n");
     }
 }
 
@@ -410,7 +425,7 @@ bool oled_task_user(void) {
             oled_write_ln("", false);
             oled_write_ln("< comment separator", false);
             oled_write_ln("v doxygen comment", false);
-            oled_write_ln("> UNIMPLEMENTED", false);
+            oled_write_ln("> todo comment", false);
             oled_write_ln("", false);
             write_pc_status_oled();
             break;
@@ -436,9 +451,9 @@ bool oled_task_user(void) {
             break;
         case _NETWORK:
             rgblight_sethsv(HSV_YELLOW);
-            oled_write_ln("Network Layer", false);
+            oled_write_ln("Internet Speed", false);
             oled_write_ln("", false);
-            oled_write_ln("Speed Test:", false);
+            oled_write_ln("'v' to retest", false);
             oled_write_ln("", false);
             write_network_oled();
             break;
@@ -491,7 +506,11 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             return false;
         }
         case GIT_STATUS: {
-            handleGitStatus(record);
+            handleCommandRun(record, "git status");
+            return false;
+        }
+        case GIT_LOG: {
+            handleCommandRun(record, "git log");
             return false;
         }
         // Programming macros
@@ -503,9 +522,17 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             handleDoxygenComment(record);
             return false;
         }
+        case TODO_COMMENT: {
+            handleDateTodoComment(record);
+            return false;
+        }
         // To arrow layer
         case ARROW_TOGGLE: {
             handleArrowToggle(record);
+            return false;
+        }
+        case SNIPPING_TOOL: {
+            handleSnippingTool(record);
             return false;
         }
         // Network layer macro
@@ -527,32 +554,32 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_BASE] = LAYOUT(
         ARROW_TOGGLE,
-        ARROW_TOGGLE,
+        SNIPPING_TOOL,
         EMAIL, VSCODE_OPEN, LOCK_COMPUTER
     ),
     [_PROGRAMING] = LAYOUT(
         ARROW_TOGGLE,
-        ARROW_TOGGLE,
-        KC_D, DOXYGEN_COMMENT, COMMENT_SEPARATOR
+        SNIPPING_TOOL,
+        TODO_COMMENT, DOXYGEN_COMMENT, COMMENT_SEPARATOR
     ),
     [_GIT] = LAYOUT(
         ARROW_TOGGLE,
-        ARROW_TOGGLE,
+        GIT_LOG,
         GIT_STATUS, GIT_COMMIT_TRACKED, GIT_COMMIT_ALL
     ),
     [_MARKDOWN] = LAYOUT(
         ARROW_TOGGLE,
-        ARROW_TOGGLE,
-        KC_D, KC_E, KC_F
+        SNIPPING_TOOL,
+        KC_D, KC_D, KC_D
     ),
     [_NETWORK] = LAYOUT(
         ARROW_TOGGLE,
-        ARROW_TOGGLE,
-        KC_D, REQUEST_RETEST_KEY, KC_F
+        SNIPPING_TOOL,
+        KC_NO, REQUEST_RETEST_KEY, KC_NO
     ),
     [_MEDIA] = LAYOUT(
         ARROW_TOGGLE,
-        ARROW_TOGGLE,
+        SNIPPING_TOOL,
         KC_MEDIA_NEXT_TRACK, KC_MEDIA_PLAY_PAUSE, KC_MEDIA_PREV_TRACK
     ),
     [_ARROWS] = LAYOUT(
