@@ -5,3 +5,4 @@ RAW_ENABLE = yes
 CONSOLE_ENABLE = yes      # For debugging output
 EXTRAKEY_ENABLE = yes
 DEBUG_ENABLE = yes
+RGBLIGHT_ENABLE = yes

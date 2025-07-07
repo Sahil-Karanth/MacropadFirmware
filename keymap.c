@@ -25,7 +25,7 @@ char received_song_info[HID_BUFFER_SIZE] = "--";
 
 // volatile bool has_new_data = false;
 static uint32_t pc_status_timer = 0;
-bool do_network_test = false;
+bool received_first_communication = false; // only build queue after we connect
 
 enum layer_names {
     _BASE,
@@ -307,11 +307,16 @@ void oled_full_clear(void) {
 
 void keyboard_post_init_user(void) {
     initQueue(&req_queue);
+
+    backlight_disable();
+    rgblight_enable();
+    rgblight_mode(RGBLIGHT_MODE_STATIC_LIGHT);
+    rgblight_sethsv(HSV_RED);
 }
 
 void matrix_scan_user(void) {
     // Check if 2 seconds have passed since the last request
-    if (timer_elapsed32(pc_status_timer) > 2000) {
+    if (timer_elapsed32(pc_status_timer) > 2000 && received_first_communication) {
         // Reset the timer
         pc_status_timer = timer_read32();
 
@@ -332,6 +337,10 @@ void matrix_scan_user(void) {
 
 void raw_hid_receive(uint8_t *data, uint8_t length) {
     print("Raw HID data received\n");
+
+    if (!received_first_communication) {
+        received_first_communication = true;
+    }
 
     // save received data
     copy_buffer(data, received_data);
@@ -364,6 +373,7 @@ bool oled_task_user(void) {
 
     switch (curr_layer) {
         case _BASE:
+            rgblight_sethsv(HSV_RED);
             oled_write_ln("Home Layer", false);
             oled_write_ln("", false);
             oled_write_ln("< lock computer", false);
@@ -373,6 +383,7 @@ bool oled_task_user(void) {
             write_pc_status_oled();
             break;
         case _PROGRAMING:
+            rgblight_sethsv(HSV_BLUE);
             oled_write_ln("Programming Layer", false);
             oled_write_ln("", false);
             oled_write_ln("< comment separator", false);
@@ -382,6 +393,7 @@ bool oled_task_user(void) {
             write_pc_status_oled();
             break;
         case _GIT:
+            rgblight_sethsv(HSV_WHITE);
             oled_write_ln("Git Layer", false);
             oled_write_ln("", false);
             oled_write_ln("< commit all", false);
@@ -391,6 +403,7 @@ bool oled_task_user(void) {
             write_pc_status_oled();
             break;
         case _MARKDOWN:
+            rgblight_sethsv(HSV_PURPLE);
             oled_write_ln("Markdown Layer", false);
             oled_write_ln("", false);
             oled_write_ln("< UNIMPLEMENTED", false);
@@ -400,6 +413,7 @@ bool oled_task_user(void) {
             write_pc_status_oled();
             break;
         case _NETWORK:
+            rgblight_sethsv(HSV_YELLOW);
             oled_write_ln("Network Layer", false);
             oled_write_ln("", false);
             oled_write_ln("Speed Test:", false);
@@ -407,6 +421,7 @@ bool oled_task_user(void) {
             write_network_oled();
             break;
         case _MEDIA:
+            rgblight_sethsv(HSV_GREEN);
             oled_write_ln("Media Player", false);
             oled_write_ln("", false);
             oled_write_ln("", false);
