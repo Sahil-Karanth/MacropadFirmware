@@ -48,6 +48,7 @@ enum custom_keycodes {
     GIT_COMMIT_ALL,
     GIT_COMMIT_TRACKED,
     GIT_STATUS,
+    REQUEST_RETEST_KEY,
 };
 
 enum tap_dance_codes {
@@ -62,6 +63,7 @@ enum PC_req_types {
     PC_PERFORMANCE = 1,
     NETWORK_TEST = 2,
     CURRENT_SONG = 3,
+    REQUEST_RETEST = 4,
 };
 
 #define MAX_QUEUE_SIZE 100
@@ -124,38 +126,6 @@ int dequeue(queue_t *q, int *value) {
     *value = q->data[--q->size];
     return 1;
 }
-
-// void initQueue(queue_t *q) {
-//     q->front = 0;
-//     q->rear = 0;
-//     q->size = 0;
-// }
-
-// int isFull(queue_t *q) {
-//     return q->size == MAX_QUEUE_SIZE;
-// }
-
-// int isEmpty(queue_t *q) {
-//     return q->size == 0;
-// }
-
-// // todo: DEFINE maybe_enqueue which only enqueues if it's not an adjancent duplicate value
-
-// int enqueue(queue_t *q, int value) {
-//     if (isFull(q)) return 0;
-//     q->data[q->rear] = value;
-//     q->rear = (q->rear + 1) % MAX_QUEUE_SIZE;
-//     q->size++;
-//     return 1;
-// }
-
-// int dequeue(queue_t *q, int *value) {
-//     if (isEmpty(q)) return 0;
-//     *value = q->data[q->front];
-//     q->front = (q->front + 1) % MAX_QUEUE_SIZE;
-//     q->size--;
-//     return 1;
-// }
 
 // the request queue (initially empty)
 queue_t req_queue;
@@ -270,6 +240,7 @@ void write_pc_status_oled(void) {
     snprintf(pc_status_str, sizeof(pc_status_str), "RAM:%s CPU:%s", ram_buf, cpu_buf);
 
     oled_write_ln(pc_status_str, false);
+    oled_write_ln("", false);
 }
 
 void write_network_oled(void) {
@@ -339,7 +310,7 @@ void keyboard_post_init_user(void) {
 }
 
 void matrix_scan_user(void) {
-    // Check if 5 seconds have passed since the last request
+    // Check if 2 seconds have passed since the last request
     if (timer_elapsed32(pc_status_timer) > 2000) {
         // Reset the timer
         pc_status_timer = timer_read32();
@@ -489,6 +460,12 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             handleNameCaseChange(record);
             return false;
         }
+        case REQUEST_RETEST_KEY: {
+            if (record->event.pressed) {
+                enqueue(&req_queue, REQUEST_RETEST);
+            }
+            return false;
+        }
     }
     return true;
 }
@@ -521,7 +498,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_NETWORK] = LAYOUT(
         KC_MEDIA_PLAY_PAUSE,
         TD(TD_CYCLE_LAYERS),
-        KC_D, KC_E, KC_F
+        KC_D, REQUEST_RETEST_KEY, KC_F
     ),
     [_MEDIA] = LAYOUT(
         KC_MEDIA_PLAY_PAUSE,

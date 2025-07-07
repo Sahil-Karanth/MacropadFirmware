@@ -22,11 +22,13 @@ report_length = 32
 PC_PERFORMANCE = 1
 NETWORK_SPEED = 2
 CURRENT_SONG = 3
+RESET_NETWORK_TEST = 4
 COULD_NOT_CONNECT = -1
 
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback/"
+
 
 class NetworkSpeedTester:
     def __init__(self):
@@ -34,6 +36,8 @@ class NetworkSpeedTester:
         self.is_testing = False
         self.last_result = None
         self.test_start_time = None
+        self.test_completion_time = None
+        self.auto_reset_delay = 30  # Auto-reset after 30 seconds
         
     def start_test(self):
         """Start network speed test in background thread"""
@@ -43,11 +47,22 @@ class NetworkSpeedTester:
             
             self.is_testing = True
             self.test_start_time = time.time()
+            self.last_result = None  # Clear previous results
             
         # Start test in background thread
         thread = threading.Thread(target=self._run_test)
         thread.daemon = True
         thread.start()
+    
+    def reset_test(self):
+        """Reset the network test state"""
+        with self.lock:
+            if not self.is_testing:  # Only reset if not currently testing
+                self.last_result = None
+                self.test_completion_time = None
+                print("Network test results cleared")
+                return True
+            return False
     
     def _run_test(self):
         """Run the actual speed test"""
@@ -64,6 +79,7 @@ class NetworkSpeedTester:
             with self.lock:
                 self.last_result = (download_speed, upload_speed)
                 self.is_testing = False
+                self.test_completion_time = time.time()
                 
             print(f"Speed test completed: {download_speed}↓ {upload_speed}↑ Mbps")
             
@@ -72,6 +88,7 @@ class NetworkSpeedTester:
             with self.lock:
                 self.last_result = None
                 self.is_testing = False
+                self.test_completion_time = None
     
     def get_status(self):
         """Get current status of speed test"""
@@ -82,7 +99,7 @@ class NetworkSpeedTester:
             elif self.last_result:
                 return "completed", 0, self.last_result
             else:
-                return "idle", 0, None
+                return "idle", 0, None          
 
 class SpotifyManager:
     def __init__(self):
@@ -238,18 +255,24 @@ def interpret_response(request_report):
     if request_type == PC_PERFORMANCE:
         return get_report(get_pc_stats())
     elif request_type == NETWORK_SPEED:
-        # Check if we need to start a new test
         status, _, _ = speed_tester.get_status()
+        
+        # Only start test if idle (no results yet)
         if status == "idle":
             speed_tester.start_test()
+        # If completed or testing, just return current status (don't restart)
         
+        return get_report(get_network_status())
+    elif request_type == RESET_NETWORK_TEST:
+        # Only reset on explicit request
+        speed_tester.reset_test()
+        speed_tester.start_test()
         return get_report(get_network_status())
     elif request_type == CURRENT_SONG:
         return get_report(get_song_info())
     else:
         # Unknown request, default to PC stats
         return get_report(get_pc_stats())
-
 
 if __name__ == '__main__':
     # initial report to send
