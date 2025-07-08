@@ -41,6 +41,7 @@ enum layer_names {
 
 int curr_layer = _BASE;
 int return_layer = _BASE; // for arrow toggle
+int chosen_image = 0;
 
 enum custom_keycodes {
     LOCK_COMPUTER = SAFE_RANGE,
@@ -98,6 +99,11 @@ void write_pc_status_oled(void);
 void write_network_oled(void);
 void write_song_info_oled(void);
 
+// -------------------------------------------------------------------------- //
+// LIFO queue
+// -------------------------------------------------------------------------- //
+
+
 void initQueue(queue_t *q) {
     q->size = 0;
 }
@@ -130,6 +136,10 @@ queue_t req_queue;
 // -------------------------------------------------------------------------- //
 // Helper Functions
 // -------------------------------------------------------------------------- //
+
+int random_int_range(int min, int max){
+   return min + rand() / (RAND_MAX / (max - min + 1) + 1);
+}
 
 void cycleLayers(bool forward) {
     if (forward) {
@@ -211,7 +221,12 @@ void handleDoxygenComment(keyrecord_t *record) {
 }
 
 void handleArrowToggle(keyrecord_t *record) {
+
     if (record -> event.pressed) {
+        
+        // display random image
+        chosen_image = random_int_range(0, NUM_IMAGES - 1);
+
         if (curr_layer != _ARROWS) {
             return_layer = curr_layer;
             curr_layer = _ARROWS;
@@ -506,7 +521,7 @@ bool oled_task_user(void) {
             rgblight_sethsv(HSV_CYAN);
             oled_write_ln("Arrow Layer", false);
             oled_write_ln("", false);
-            oled_write_raw_P((const char *)bitmaps_arr[2], BITMAP_SIZE);
+            oled_write_raw_P((const char *)bitmaps_arr[chosen_image], BITMAP_SIZE);
             break;
     }
 
