@@ -296,16 +296,16 @@ void categorise_received_data(void) {
 }
 
 void write_pc_status_oled(void) {
-    static char pc_status_str[100] = "RAM:-- CPU:-- BAT: --";
+    static char pc_status_str[100] = "RAM:-- CPU:-- B:--";
 
     char ram_buf[16] = "--";
     char cpu_buf[16] = "--";
     char bat_buf[16] = "--";
 
     // Parse the new data
-sscanf(received_pc_stats, "%15[^|]|%15[^|]|%15s", ram_buf, cpu_buf, bat_buf);
+    sscanf(received_pc_stats, "%15[^|]|%15[^|]|%15s", ram_buf, cpu_buf, bat_buf);
 
-    snprintf(pc_status_str, sizeof(pc_status_str), "RAM:%s CPU:%s BAT:%s", ram_buf, cpu_buf, bat_buf);
+    snprintf(pc_status_str, sizeof(pc_status_str), "RAM:%s CPU:%s B:%s", ram_buf, cpu_buf, bat_buf);
 
     oled_write_ln(pc_status_str, false);
     oled_write_ln("", false);
@@ -340,30 +340,25 @@ void write_network_oled(void) {
 }
 
 void write_song_info_oled(void) {
-    static char song_display[200] = "No song playing";
-    
-    // Check if we have received song data
-    if (strcmp(received_song_info, "--") != 0) {
-        char song_name[32] = "--";
-        char artist_name[32] = "--";
-        
-        // Parse the received data (song|artist format)
-        sscanf(received_song_info, "%31[^|]|%31[^\n]", song_name, artist_name);
-        
-        if (strcmp(song_name, "--") != 0 && strcmp(artist_name, "--") != 0) {
-            snprintf(song_display, sizeof(song_display), 
-                    "%s\n%s", song_name, artist_name);
-        } else {
-            strcpy(song_display, "No song playing");
-            oled_write_ln(song_display, false);
-            oled_write_ln("", false);
-            oled_write_ln("", false);
-            return;
-        }
+    // First, check if the data from the host is the default "no data" message.
+    if (strcmp(received_song_info, "--") == 0 || strcmp(received_song_info, "--|--") == 0) {
+        oled_write_ln("No song playing", false);
+        return;
     }
-    
-    oled_write_ln(song_display, false);
 
+    char song_name[32] = "";
+    char artist_name[32] = "";
+
+    // Parse the "song|artist" string received from client.
+    sscanf(received_song_info, "%31[^|]|%31[^\n]", song_name, artist_name);
+
+    // Check if parsing was successful and gave us a valid song title.
+    if (strlen(song_name) > 0) {
+        oled_write_ln(song_name, false);
+        oled_write_ln(artist_name, false);
+    } else {
+        oled_write_ln("No song playing", false);
+    }
 }
 
 void oled_full_clear(void) {

@@ -211,13 +211,13 @@ def send_report_with_timeout(request_report):
 
 psutil.cpu_percent(interval=None) 
 def get_pc_stats():
-    ram_percent = psutil.virtual_memory().percent
-    cpu_percent = psutil.cpu_percent(interval=None) 
+    ram_percent = round(psutil.virtual_memory().percent)
+    cpu_percent = round(psutil.cpu_percent(interval=None))
 
     battery = psutil.sensors_battery()
     bat_percent = 0.0
     if battery is not None:
-        bat_percent = round(battery.percent, 1)
+        bat_percent = battery.percent
 
     message = f"{PC_PERFORMANCE}{str(ram_percent)}|{str(cpu_percent)}|{str(bat_percent)}"
 
