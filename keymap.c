@@ -506,7 +506,7 @@ bool oled_task_user(void) {
             rgblight_sethsv(HSV_CYAN);
             oled_write_ln("Arrow Layer", false);
             oled_write_ln("", false);
-            oled_write_raw_P((const char *)bitmap_gungeoneers, BITMAP_SIZE);
+            oled_write_raw_P((const char *)bitmaps_arr[2], BITMAP_SIZE);
             break;
     }
 
