@@ -202,7 +202,7 @@ void handleDateTodoComment(keyrecord_t *record) {
 void handleCommentSep(keyrecord_t *record) {
     if (record->event.pressed) {
         send_string("// -------------------------------------------------------------------------- //\n");
-        send_string("// SECTION_TITLE //\n");
+        send_string("// SECTION_TITLE\n");
         send_string("// -------------------------------------------------------------------------- //\n");
     }
 }
@@ -296,15 +296,16 @@ void categorise_received_data(void) {
 }
 
 void write_pc_status_oled(void) {
-    static char pc_status_str[100] = "RAM:-- CPU:--";
+    static char pc_status_str[100] = "RAM:-- CPU:-- BAT: --";
 
     char ram_buf[16] = "--";
     char cpu_buf[16] = "--";
+    char bat_buf[16] = "--";
 
     // Parse the new data
-    sscanf(received_pc_stats, "%15[^|]|%15s", ram_buf, cpu_buf);
+sscanf(received_pc_stats, "%15[^|]|%15[^|]|%15s", ram_buf, cpu_buf, bat_buf);
 
-    snprintf(pc_status_str, sizeof(pc_status_str), "RAM:%s CPU:%s", ram_buf, cpu_buf);
+    snprintf(pc_status_str, sizeof(pc_status_str), "RAM:%s CPU:%s BAT:%s", ram_buf, cpu_buf, bat_buf);
 
     oled_write_ln(pc_status_str, false);
     oled_write_ln("", false);
@@ -445,12 +446,6 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
 
     print("Next raw HID request sent\n");
 }
-
-
-
-
-
-
 
 // This function runs to update the OLED display
 bool oled_task_user(void) {

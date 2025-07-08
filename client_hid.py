@@ -213,7 +213,13 @@ psutil.cpu_percent(interval=None)
 def get_pc_stats():
     ram_percent = psutil.virtual_memory().percent
     cpu_percent = psutil.cpu_percent(interval=None) 
-    message = f"{PC_PERFORMANCE}{str(ram_percent)}|{str(cpu_percent)}"
+
+    battery = psutil.sensors_battery()
+    bat_percent = 0.0
+    if battery is not None:
+        bat_percent = round(battery.percent, 1)
+
+    message = f"{PC_PERFORMANCE}{str(ram_percent)}|{str(cpu_percent)}|{str(bat_percent)}"
 
     return message.encode('utf-8')
 
