@@ -16,7 +16,7 @@ macropad_vendor_id     = 0xFEED
 macropad_product_id    = 0x9A25
 
 loki65_keyboard_vendor_id = 0x8968
-loki65_keyboard_product_id = 0x4C36
+loki65_keyboard_product_id = 0x4C37
 
 usage_page    = 0xFF60
 usage         = 0x61
@@ -33,6 +33,131 @@ COULD_NOT_CONNECT = -1
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback/"
+
+
+class KeyboardManager:
+    def __init__(self):
+        self.keyboard_device = None
+        self.keyboard_lock = Lock()
+        self.connection_attempts = 0
+        self.max_connection_attempts = 5
+        self.last_connection_attempt = 0
+        self.connection_retry_delay = 2.0  # seconds
+        
+    def _find_keyboard_interface(self):
+        """Find the Loki65 keyboard raw HID interface"""
+        try:
+            keyboard_interfaces = hid.enumerate(loki65_keyboard_vendor_id, loki65_keyboard_product_id)
+            raw_hid_interfaces = [
+                i for i in keyboard_interfaces 
+                if i['usage_page'] == usage_page and i['usage'] == usage
+            ]
+            
+            if raw_hid_interfaces:
+                return raw_hid_interfaces[0]['path']
+            return None
+            
+        except Exception as e:
+            print(f"Error finding keyboard interface: {e}")
+            return None
+    
+    def _connect_keyboard(self):
+        """Establish connection to keyboard"""
+        current_time = time.time()
+        
+        # Rate limit connection attempts
+        if (current_time - self.last_connection_attempt) < self.connection_retry_delay:
+            return False
+            
+        self.last_connection_attempt = current_time
+        
+        if self.connection_attempts >= self.max_connection_attempts:
+            return False
+        
+        try:
+            keyboard_path = self._find_keyboard_interface()
+            if not keyboard_path:
+                print("Loki65 raw HID interface not found.")
+                self.connection_attempts += 1
+                return False
+            
+            self.keyboard_device = hid.device()
+            self.keyboard_device.open_path(keyboard_path)
+            self.keyboard_device.set_nonblocking(1)  # Set non-blocking mode
+            
+            print("Successfully connected to Loki65 keyboard.")
+            self.connection_attempts = 0  # Reset on successful connection
+            return True
+            
+        except Exception as e:
+            print(f"Failed to connect to keyboard: {e}")
+            self.connection_attempts += 1
+            if self.keyboard_device:
+                try:
+                    self.keyboard_device.close()
+                except:
+                    pass
+                self.keyboard_device = None
+            return False
+    
+    def _is_keyboard_connected(self):
+        """Check if keyboard is still connected"""
+        if not self.keyboard_device:
+            return False
+        
+        try:
+            # Try a simple read operation to test connection
+            # This should return immediately due to non-blocking mode
+            self.keyboard_device.read(1, timeout_ms=0)
+            return True
+        except Exception:
+            return False
+    
+    def send_layer_data(self, layer_data):
+        """Send layer data to keyboard with persistent connection"""
+        with self.keyboard_lock:
+            # Check if we need to establish/re-establish connection
+            if not self.keyboard_device or not self._is_keyboard_connected():
+                if not self._connect_keyboard():
+                    return False
+            
+            try:
+                # Prepare the report
+                report = [0x00] * (report_length + 1)
+                report[1] = layer_data
+                
+                # Send the data
+                bytes_written = self.keyboard_device.write(bytes(report))
+                
+                if bytes_written > 0:
+                    print(f"Successfully sent layer '{layer_data}' to Loki65 keyboard.")
+                    return True
+                else:
+                    print("Failed to write data to keyboard")
+                    # Connection might be broken, mark for reconnection
+                    self._disconnect_keyboard()
+                    return False
+                    
+            except Exception as e:
+                print(f"Error sending data to keyboard: {e}")
+                # Connection might be broken, mark for reconnection
+                self._disconnect_keyboard()
+                return False
+    
+    def _disconnect_keyboard(self):
+        """Safely disconnect from keyboard"""
+        if self.keyboard_device:
+            try:
+                self.keyboard_device.close()
+            except:
+                pass
+            self.keyboard_device = None
+    
+    def cleanup(self):
+        """Cleanup keyboard connection"""
+        with self.keyboard_lock:
+            self._disconnect_keyboard()
+            print("Keyboard connection cleaned up.")
 
 
 class NetworkSpeedTester:
@@ -164,6 +289,7 @@ class SpotifyManager:
 # Global instances
 speed_tester = NetworkSpeedTester()
 spotify_manager = SpotifyManager()
+keyboard_manager = KeyboardManager()
 
 def get_raw_hid_interface():
     device_interfaces = hid.enumerate(macropad_vendor_id, macropad_product_id)
@@ -212,43 +338,11 @@ def send_report_with_timeout(interface, request_report):
 
 def send_raw_hid_to_keyboard(data_to_send):
     """
-    Finds the Loki65 keyboard, sends a raw HID report, and closes the connection.
+    Send data to keyboard using the persistent keyboard manager
     """
-    try:
-        # Find all HID devices matching the Loki65's VID and PID
-        keyboard_interfaces = hid.enumerate(loki65_keyboard_vendor_id, loki65_keyboard_product_id)
-        
-        # Filter for the raw HID interface (usage_page 0xFF60 is common for custom keyboards)
-        raw_hid_interfaces = [
-            i for i in keyboard_interfaces 
-            if i['usage_page'] == usage_page and i['usage'] == usage
-        ]
-
-        if not raw_hid_interfaces:
-            # print("Loki65 raw HID interface not found.")
-            return
-
-        keyboard_path = raw_hid_interfaces[0]['path']
-        keyboard_device = hid.device()
-
-        try:
-            keyboard_device.open_path(keyboard_path)
-            
-            # Prepare the report. It needs a report ID (0x00) followed by the data,
-            # padded to the expected report length.
-            report = [0x00] * (report_length + 1)
-            report[1] = data_to_send # Place the layer data in the report
-            
-            keyboard_device.write(bytes(report))
-            print(f"Successfully sent layer '{data_to_send}' to Loki65 keyboard.")
-
-        finally:
-            # Ensure the device is always closed
-            keyboard_device.close()
-
-    except Exception as e:
-        print(f"Failed to send HID report to keyboard: {e}")
-
+    success = keyboard_manager.send_layer_data(data_to_send)
+    if not success:
+        print(f"Failed to send layer '{data_to_send}' to keyboard")
 
 psutil.cpu_percent(interval=None) 
 def get_pc_stats():
@@ -275,6 +369,7 @@ def get_song_info():
         message = f"{CURRENT_SONG}--|--"
     
     return message.encode('utf-8')
+
 def get_network_status():
     """Get current network test status and format for QMK"""
     status, elapsed, result = speed_tester.get_status()
@@ -320,8 +415,8 @@ def interpret_response(request_report):
     else:
         # Unknown request, default to PC stats
         return get_report(get_pc_stats())
-    
-# rgb to keyboard is an interupt/separate thread
+
+# rgb to keyboard is an interrupt/separate thread
 def hid_read_thread(interface):
     while True:
         report = interface.read(report_length, timeout_ms=100)
@@ -329,8 +424,6 @@ def hid_read_thread(interface):
             if report[0] == RGB_SEND:
                 layer = report[1]
                 print(f"Received RGB layer interrupt: {layer}")
-
-                # TODO: add raw hid send to keyboard (not macropad)
                 send_raw_hid_to_keyboard(layer)
 
         time.sleep(0.01)
@@ -347,22 +440,28 @@ if __name__ == '__main__':
 
     request_report = get_report(get_pc_stats())
 
-    while True:
-        try:
-            response_report = send_report_with_timeout(interface, request_report)
+    try:
+        while True:
+            try:
+                response_report = send_report_with_timeout(interface, request_report)
 
-            if response_report == COULD_NOT_CONNECT:
-                time.sleep(5)
-                continue
+                if response_report == COULD_NOT_CONNECT:
+                    time.sleep(5)
+                    continue
 
-            request_report = interpret_response(response_report)
-            time.sleep(1)
+                request_report = interpret_response(response_report)
+                time.sleep(1)
 
-        except KeyboardInterrupt:
-            print("\nShutting down...")
-            break
-        except Exception as e:
-            print(f"Error in main loop: {e}")
-            time.sleep(1)
+            except KeyboardInterrupt:
+                print("\nShutting down...")
+                break
+            except Exception as e:
+                print(f"Error in main loop: {e}")
+                time.sleep(1)
 
-    interface.close()
+    finally:
+        # Cleanup connections
+        print("Cleaning up connections...")
+        keyboard_manager.cleanup()
+        interface.close()
+        print("Cleanup complete.")
