@@ -71,6 +71,7 @@ enum PC_req_types {
     NETWORK_TEST = 2,
     CURRENT_SONG = 3,
     REQUEST_RETEST = 4,
+    RGB_SEND = 5,
 };
 
 #define MAX_QUEUE_SIZE 100
@@ -148,6 +149,17 @@ void cycleLayers(bool forward) {
     } else {
         curr_layer = (curr_layer - 1 + NUM_LAYERS_TO_CYCLE) % NUM_LAYERS_TO_CYCLE;
         layer_move(curr_layer);
+    }
+
+    // send rgb to python client to forward to keyboard
+    if (received_first_communication) {
+        uint8_t rgb_send_buffer[HID_BUFFER_SIZE - 1];
+        memset(rgb_send_buffer, 0, HID_BUFFER_SIZE - 1);
+    
+        rgb_send_buffer[0] = RGB_SEND;
+        rgb_send_buffer[1] = curr_layer;
+    
+        raw_hid_send(rgb_send_buffer, HID_BUFFER_SIZE - 1);
     }
 }
 

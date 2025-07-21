@@ -12,17 +12,22 @@ from threading import Lock
 
 load_dotenv()
 
-vendor_id     = 0xFEED
-product_id    = 0x9A25
+macropad_vendor_id     = 0xFEED
+macropad_product_id    = 0x9A25
+
+loki65_keyboard_vendor_id = 0x8968
+loki65_keyboard_product_id = 0x4C36
 
 usage_page    = 0xFF60
 usage         = 0x61
+
 report_length = 32
 
 PC_PERFORMANCE = 1
 NETWORK_SPEED = 2
 CURRENT_SONG = 3
 RESET_NETWORK_TEST = 4
+RGB_SEND = 5
 COULD_NOT_CONNECT = -1
 
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
@@ -161,7 +166,7 @@ speed_tester = NetworkSpeedTester()
 spotify_manager = SpotifyManager()
 
 def get_raw_hid_interface():
-    device_interfaces = hid.enumerate(vendor_id, product_id)
+    device_interfaces = hid.enumerate(macropad_vendor_id, macropad_product_id)
     raw_hid_interfaces = [i for i in device_interfaces if i['usage_page'] == usage_page and i['usage'] == usage]
 
     if len(raw_hid_interfaces) == 0:
@@ -180,12 +185,9 @@ def get_report(data):
     request_data[1:len(data) + 1] = data
     return bytes(request_data)
 
-def send_report_with_timeout(request_report):
-    interface = get_raw_hid_interface()
-
+def send_report_with_timeout(interface, request_report):
     if interface is None:
         print("No device found")
-        # sys.exit(1)
         return COULD_NOT_CONNECT
 
     print("Request:")
@@ -193,10 +195,9 @@ def send_report_with_timeout(request_report):
 
     try:
         interface.write(request_report)
-        
-        # Use read with timeout (timeout in milliseconds)
+
         response_report = interface.read(report_length, timeout_ms=1000)
-        
+
         if response_report:
             print("Next service:")
             print(response_report)
@@ -205,9 +206,49 @@ def send_report_with_timeout(request_report):
 
     except Exception as e:
         print(f"Communication error: {e}")
-    finally:
-        interface.close()
-        return response_report
+        return COULD_NOT_CONNECT
+
+    return response_report
+
+def send_raw_hid_to_keyboard(data_to_send):
+    """
+    Finds the Loki65 keyboard, sends a raw HID report, and closes the connection.
+    """
+    try:
+        # Find all HID devices matching the Loki65's VID and PID
+        keyboard_interfaces = hid.enumerate(loki65_keyboard_vendor_id, loki65_keyboard_product_id)
+        
+        # Filter for the raw HID interface (usage_page 0xFF60 is common for custom keyboards)
+        raw_hid_interfaces = [
+            i for i in keyboard_interfaces 
+            if i['usage_page'] == usage_page and i['usage'] == usage
+        ]
+
+        if not raw_hid_interfaces:
+            # print("Loki65 raw HID interface not found.")
+            return
+
+        keyboard_path = raw_hid_interfaces[0]['path']
+        keyboard_device = hid.device()
+
+        try:
+            keyboard_device.open_path(keyboard_path)
+            
+            # Prepare the report. It needs a report ID (0x00) followed by the data,
+            # padded to the expected report length.
+            report = [0x00] * (report_length + 1)
+            report[1] = data_to_send # Place the layer data in the report
+            
+            keyboard_device.write(bytes(report))
+            print(f"Successfully sent layer '{data_to_send}' to Loki65 keyboard.")
+
+        finally:
+            # Ensure the device is always closed
+            keyboard_device.close()
+
+    except Exception as e:
+        print(f"Failed to send HID report to keyboard: {e}")
+
 
 psutil.cpu_percent(interval=None) 
 def get_pc_stats():
@@ -279,15 +320,36 @@ def interpret_response(request_report):
     else:
         # Unknown request, default to PC stats
         return get_report(get_pc_stats())
+    
+# rgb to keyboard is an interupt/separate thread
+def hid_read_thread(interface):
+    while True:
+        report = interface.read(report_length, timeout_ms=100)
+        if report:
+            if report[0] == RGB_SEND:
+                layer = report[1]
+                print(f"Received RGB layer interrupt: {layer}")
+
+                # TODO: add raw hid send to keyboard (not macropad)
+                send_raw_hid_to_keyboard(layer)
+
+        time.sleep(0.01)
+
 
 if __name__ == '__main__':
-    # initial report to send
+    interface = get_raw_hid_interface()
+    if interface is None:
+        print("No device found, exiting.")
+        sys.exit(1)
+
+    # Start thread for RGB interrupts
+    threading.Thread(target=hid_read_thread, args=(interface,), daemon=True).start()
+
     request_report = get_report(get_pc_stats())
 
     while True:
         try:
-            # service request and get next one
-            response_report = send_report_with_timeout(request_report)
+            response_report = send_report_with_timeout(interface, request_report)
 
             if response_report == COULD_NOT_CONNECT:
                 time.sleep(5)
@@ -295,9 +357,12 @@ if __name__ == '__main__':
 
             request_report = interpret_response(response_report)
             time.sleep(1)
+
         except KeyboardInterrupt:
             print("\nShutting down...")
             break
         except Exception as e:
             print(f"Error in main loop: {e}")
             time.sleep(1)
+
+    interface.close()
