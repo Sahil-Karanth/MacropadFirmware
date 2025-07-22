@@ -221,16 +221,15 @@ void handleCommentSep(keyrecord_t *record) {
 
 void handleDoxygenComment(keyrecord_t *record) {
     if (record->event.pressed) {
-        send_string(
-            " * @brief BRIEF\n"
-            " *\n"
-            " * DESCR\n"
-            " *\n"
-            " * @param PNAME PDESC\n"
-            " * @return RDESC\n"
-        );
+        send_string(" * @brief BRIEF\n");
+        send_string(" *\n");
+        send_string(" * DESCR\n");
+        send_string(" *\n");
+        send_string(" * @param PNAME PDESC\n");
+        send_string(" * @return RDESC\n");
     }
 }
+
 
 void handleArrowToggle(keyrecord_t *record) {
 
