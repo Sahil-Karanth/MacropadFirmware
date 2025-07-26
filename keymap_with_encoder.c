@@ -25,6 +25,7 @@ char received_pc_stats[HID_BUFFER_SIZE] = "--";
 char received_network_stats[HID_BUFFER_SIZE] = "--";
 char received_song_info[HID_BUFFER_SIZE] = "--";
 
+// volatile bool has_new_data = false;
 static uint32_t pc_status_timer = 0;
 bool received_first_communication = false; // only build queue after we connect
 
@@ -59,10 +60,6 @@ enum custom_keycodes {
     CODE_BLOCK,
     LATEX_BLOCK,
     LATEX_BLOCK_INLINE,
-};
-
-enum tap_dance_codes {
-    TD_LAYER_CYCLE,
 };
 
 // -------------------------------------------------------------------------- //
@@ -102,14 +99,11 @@ void categorise_received_data(void);
 void write_pc_status_oled(void);
 void write_network_oled(void);
 void write_song_info_oled(void);
-// void layerCycleArrowTapDance(tap_dance_state_t *state, void *user_data);
-// void layerCycleArrowTapDance(tap_dance_state_t *state, void *user_data);
-// void exit_or_up_finished(tap_dance_state_t *state, void *user_data);
-// void exit_or_up_reset(tap_dance_state_t *state, void *user_data);
 
 // -------------------------------------------------------------------------- //
 // LIFO queue
 // -------------------------------------------------------------------------- //
+
 
 void initQueue(queue_t *q) {
     q->size = 0;
@@ -123,6 +117,7 @@ int isEmpty(queue_t *q) {
     return q->size == 0;
 }
 
+// Push onto the stack (top is at size - 1)
 int enqueue(queue_t *q, int value) {
     if (isFull(q)) return 0;
     q->data[q->size++] = value;
@@ -136,6 +131,7 @@ int dequeue(queue_t *q, int *value) {
     return 1;
 }
 
+// the request queue (initially empty)
 queue_t req_queue;
 
 // -------------------------------------------------------------------------- //
@@ -164,15 +160,6 @@ void cycleLayers(bool forward) {
         rgb_send_buffer[1] = curr_layer;
     
         raw_hid_send(rgb_send_buffer, HID_BUFFER_SIZE - 1);
-    }
-}
-
-
-void layerCycleTapDance(tap_dance_state_t *state, void *user_data) {
-    if (state->count == 1) {
-        cycleLayers(true);
-    } else if (state->count == 2) {
-        cycleLayers(false);
     }
 }
 
@@ -257,14 +244,6 @@ void handleArrowToggle(keyrecord_t *record) {
         } else {
             curr_layer = return_layer;
         }
-        layer_move(curr_layer);
-    }
-}
-
-void handleExitArrows(keyrecord_t *record) {
-
-    if (record -> event.pressed) {
-        curr_layer = return_layer;
         layer_move(curr_layer);
     }
 }
@@ -412,6 +391,25 @@ void keyboard_post_init_user(void) {
     rgblight_enable();
     rgblight_mode(RGBLIGHT_MODE_STATIC_LIGHT);
     rgblight_sethsv(HSV_RED);
+}
+
+
+#define ENCODER_LAYER_SKIP 2
+bool encoder_update_user(uint8_t index, bool clockwise) {
+    static uint8_t encoder_tick = 0;
+
+    encoder_tick++;
+    if (encoder_tick % ENCODER_LAYER_SKIP != 0) {
+        return false;
+    }
+
+    if (!clockwise) {
+        cycleLayers(true);
+    } else {
+        cycleLayers(false);
+    }
+
+    return false;
 }
 
 void matrix_scan_user(void) {
@@ -613,46 +611,38 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 }
 
 // -------------------------------------------------------------------------- //
-// Tap Dance Configuration
-// -------------------------------------------------------------------------- //
-
-tap_dance_action_t tap_dance_actions[] = {
-    [TD_LAYER_CYCLE] = ACTION_TAP_DANCE_FN(layerCycleTapDance),
-};
-
-// -------------------------------------------------------------------------- //
 // Macropad Layout
 // -------------------------------------------------------------------------- //
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_BASE] = LAYOUT(
-        KC_NO,  // Encoder button - no longer used since encoder is broken
-        TD(TD_LAYER_CYCLE),  // Up arrow: tap=cycle forward, double-tap=cycle back, hold=arrow layer
+        ARROW_TOGGLE,
+        SNIPPING_TOOL,
         EMAIL, VSCODE_OPEN, LOCK_COMPUTER
     ),
     [_PROGRAMING] = LAYOUT(
-        KC_NO,
-        TD(TD_LAYER_CYCLE),
+        ARROW_TOGGLE,
+        SNIPPING_TOOL,
         TODO_COMMENT, DOXYGEN_COMMENT, COMMENT_SEPARATOR
     ),
     [_GIT] = LAYOUT(
-        KC_NO,
-        TD(TD_LAYER_CYCLE),
+        ARROW_TOGGLE,
+        GIT_LOG,
         GIT_STATUS, GIT_COMMIT_TRACKED, GIT_COMMIT_ALL
     ),
     [_MARKDOWN] = LAYOUT(
-        KC_NO,
-        TD(TD_LAYER_CYCLE),
+        ARROW_TOGGLE,
+        SNIPPING_TOOL,
         LATEX_BLOCK_INLINE, LATEX_BLOCK, CODE_BLOCK
     ),
     [_NETWORK] = LAYOUT(
-        KC_NO,
-        TD(TD_LAYER_CYCLE),
-        KC_RIGHT, REQUEST_RETEST_KEY, KC_LEFT
+        ARROW_TOGGLE,
+        SNIPPING_TOOL,
+        KC_NO, REQUEST_RETEST_KEY, KC_NO
     ),
     [_MEDIA] = LAYOUT(
-        KC_NO,
-        TD(TD_LAYER_CYCLE),
+        ARROW_TOGGLE,
+        SNIPPING_TOOL,
         KC_MEDIA_NEXT_TRACK, KC_MEDIA_PLAY_PAUSE, KC_MEDIA_PREV_TRACK
     ),
     [_ARROWS] = LAYOUT(
@@ -662,24 +652,8 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     ),    
 };
 
-
 const uint16_t PROGMEM backlight_combo[] = {KC_UP, KC_DOWN, COMBO_END};
-
-const uint16_t PROGMEM base_arrows_combo[] = {EMAIL, LOCK_COMPUTER, COMBO_END};
-const uint16_t PROGMEM prog_arrows_combo[] = {TODO_COMMENT, COMMENT_SEPARATOR, COMBO_END};
-const uint16_t PROGMEM git_arrows_combo[] = {GIT_STATUS, GIT_COMMIT_ALL, COMBO_END};
-const uint16_t PROGMEM markdown_arrows_combo[] = {LATEX_BLOCK_INLINE, CODE_BLOCK, COMBO_END};
-const uint16_t PROGMEM normal_arrows_combo[] = {KC_LEFT, KC_RIGHT, COMBO_END};
-const uint16_t PROGMEM media_arrows_combo[] = {KC_MEDIA_NEXT_TRACK, KC_MEDIA_PREV_TRACK, COMBO_END};
-
-
 combo_t key_combos[] = {
-    COMBO(backlight_combo, BL_STEP),
-
-    COMBO(base_arrows_combo, ARROW_TOGGLE),
-    COMBO(prog_arrows_combo, ARROW_TOGGLE),
-    COMBO(git_arrows_combo, ARROW_TOGGLE),
-    COMBO(markdown_arrows_combo, ARROW_TOGGLE),
-    COMBO(normal_arrows_combo, ARROW_TOGGLE),
-    COMBO(media_arrows_combo, ARROW_TOGGLE),
+    COMBO(backlight_combo, BL_STEP)
 };
+
