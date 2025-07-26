@@ -17,7 +17,9 @@
 
 #define NUM_LAYERS_TO_CYCLE 6
 #define HID_BUFFER_SIZE 33
-#define NUM_SCREEN_LINES 6
+
+#define NUM_SCREEN_LINES 7
+#define SCREEN_CHAR_WIDTH 20
 
 // Globals for Raw HID communication
 char received_data[HID_BUFFER_SIZE] = "--";
@@ -102,10 +104,6 @@ void categorise_received_data(void);
 void write_pc_status_oled(void);
 void write_network_oled(void);
 void write_song_info_oled(void);
-// void layerCycleArrowTapDance(tap_dance_state_t *state, void *user_data);
-// void layerCycleArrowTapDance(tap_dance_state_t *state, void *user_data);
-// void exit_or_up_finished(tap_dance_state_t *state, void *user_data);
-// void exit_or_up_reset(tap_dance_state_t *state, void *user_data);
 
 // -------------------------------------------------------------------------- //
 // LIFO queue
@@ -375,6 +373,9 @@ void write_song_info_oled(void) {
     // First, check if the data from the host is the default "no data" message.
     if (strcmp(received_song_info, "--") == 0 || strcmp(received_song_info, "--|--") == 0) {
         oled_write_ln("No song playing", false);
+        for (int i = 0; i < 3; i++) {
+            oled_write_ln("", false);
+        }
         return;
     }
 
@@ -386,10 +387,28 @@ void write_song_info_oled(void) {
 
     // Check if parsing was successful and gave us a valid song title.
     if (strlen(song_name) > 0) {
+
+        int song_num_lines = (strlen(song_name) / 20) + 1;
+        int artist_num_lines = (strlen(artist_name) / 20) + 1;
+
+        int lines_used = song_num_lines + artist_num_lines;
+
+        // screen line to clear from (to avoid songs overlapping text on screen)
+        int wipe_line = lines_used + 3;
+
         oled_write_ln(song_name, false);
         oled_write_ln(artist_name, false);
+
+        for (int i = 0; i < NUM_SCREEN_LINES - wipe_line + 1; i++) {
+            oled_write_ln("", false);
+        }
+
     } else {
         oled_write_ln("No song playing", false);
+
+        for (int i = 0; i < 3; i++) {
+            oled_write_ln("", false);
+        }
     }
 }
 
@@ -502,7 +521,6 @@ bool oled_task_user(void) {
             oled_write_ln("< code block", false);
             oled_write_ln("v latex block", false);
             oled_write_ln("> latex inline", false);
-            oled_write_ln("", false);
             write_pc_status_oled();
             break;
         case _NETWORK:
@@ -662,6 +680,9 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     ),    
 };
 
+// -------------------------------------------------------------------------- //
+// Combo Keys
+// -------------------------------------------------------------------------- //
 
 const uint16_t PROGMEM backlight_combo[] = {KC_UP, KC_DOWN, COMBO_END};
 

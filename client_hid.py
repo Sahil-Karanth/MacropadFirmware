@@ -30,6 +30,9 @@ RESET_NETWORK_TEST = 4
 RGB_SEND = 5
 COULD_NOT_CONNECT = -1
 
+SERVICE_INTERVAL = 1
+SONG_NAME_TRUNCATE = 20
+
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback/"
@@ -344,17 +347,22 @@ def send_raw_hid_to_keyboard(data_to_send):
     if not success:
         print(f"Failed to send layer '{data_to_send}' to keyboard")
 
+def zero_pad(integer):
+    if integer <= 9 and integer >= 0:
+        return f"0{integer}"
+    return str(integer)
+
 psutil.cpu_percent(interval=None) 
 def get_pc_stats():
     ram_percent = round(psutil.virtual_memory().percent)
     cpu_percent = round(psutil.cpu_percent(interval=None))
 
     battery = psutil.sensors_battery()
-    bat_percent = 0.0
+    bat_percent = 0
     if battery is not None:
         bat_percent = battery.percent
 
-    message = f"{PC_PERFORMANCE}{str(ram_percent)}|{str(cpu_percent)}|{str(bat_percent)}"
+    message = f"{PC_PERFORMANCE}{zero_pad(ram_percent)}|{zero_pad(cpu_percent)}|{zero_pad(bat_percent)}"
 
     return message.encode('utf-8')
 
@@ -364,7 +372,10 @@ def get_song_info():
     
     if song_info:
         song_name, artists = song_info
-        message = f"{CURRENT_SONG}{song_name}|{artists}"
+    
+        first_artist = artists.split(",")[0]
+
+        message = f"{CURRENT_SONG}{song_name[:SONG_NAME_TRUNCATE]}|{first_artist}"
     else:
         message = f"{CURRENT_SONG}--|--"
     
@@ -429,11 +440,18 @@ def hid_read_thread(interface):
         time.sleep(0.01)
 
 
-if __name__ == '__main__':
-    interface = get_raw_hid_interface()
-    if interface is None:
-        print("No device found, exiting.")
-        sys.exit(1)
+def interface_connect():
+    interface = None
+    while interface is None:
+        interface = get_raw_hid_interface()
+        if interface is None:
+            print("No device found. Retrying in 5 seconds...")
+            time.sleep(5)
+    return interface
+
+def main():
+
+    interface = interface_connect()
 
     # Start thread for RGB interrupts
     threading.Thread(target=hid_read_thread, args=(interface,), daemon=True).start()
@@ -446,18 +464,21 @@ if __name__ == '__main__':
                 response_report = send_report_with_timeout(interface, request_report)
 
                 if response_report == COULD_NOT_CONNECT:
-                    time.sleep(5)
+                    print("Lost connection. Attempting to reconnect...")
+                    interface = interface_connect()                    
+                    threading.Thread(target=hid_read_thread, args=(interface,), daemon=True).start()
+                    request_report = get_report(get_pc_stats())
                     continue
 
                 request_report = interpret_response(response_report)
-                time.sleep(1)
+                time.sleep(SERVICE_INTERVAL)
 
             except KeyboardInterrupt:
                 print("\nShutting down...")
                 break
             except Exception as e:
                 print(f"Error in main loop: {e}")
-                time.sleep(1)
+                time.sleep(5)
 
     finally:
         # Cleanup connections
@@ -465,3 +486,6 @@ if __name__ == '__main__':
         keyboard_manager.cleanup()
         interface.close()
         print("Cleanup complete.")
+
+if __name__ == '__main__':
+    main()
