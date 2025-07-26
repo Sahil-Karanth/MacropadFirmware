@@ -194,7 +194,7 @@ void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly) {
             tap_code(KC_NUHS); // UK # key
             send_string(" COMMIT TRACKED ONLY");
         } else {
-            send_string("git add . && git commit -m ''       ");
+            send_string("git add . && git commit -m ''          ");
             tap_code(KC_NUHS);
             send_string(" COMMIT ALL");
         }
