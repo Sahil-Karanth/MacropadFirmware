@@ -46,6 +46,8 @@ int curr_layer = _BASE;
 int return_layer = _BASE; // for arrow toggle
 int chosen_image = 0;
 
+bool display_enabled = true; // for toggling the oled
+
 enum custom_keycodes {
     LOCK_COMPUTER = SAFE_RANGE,
     VSCODE_OPEN,
@@ -63,6 +65,7 @@ enum custom_keycodes {
     CODE_BLOCK,
     LATEX_BLOCK,
     LATEX_BLOCK_INLINE,
+    DISPLAY_TOGGLE,
 };
 
 enum tap_dance_codes {
@@ -464,6 +467,14 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
 
 // This function runs to update the OLED display
 bool oled_task_user(void) {
+
+    if (display_enabled) {
+        oled_on();
+    } else {
+        oled_off();
+        return false;
+    }
+
     static int last_layer = -1;
     
     if (last_layer != curr_layer) {
@@ -614,6 +625,17 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
+        case DISPLAY_TOGGLE: {
+            if (record->event.pressed) {
+                display_enabled = !display_enabled;
+                if (display_enabled) {
+                    rgblight_enable();
+                } else {
+                    rgblight_disable();
+                }
+            }
+            return false;
+        }
     }
 
     return true;
@@ -675,6 +697,8 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 
 const uint16_t PROGMEM backlight_combo[] = {KC_UP, KC_DOWN, COMBO_END};
 
+const uint16_t PROGMEM display_off_combo[] = {TD(TD_LAYER_CYCLE), VSCODE_OPEN, COMBO_END};
+
 const uint16_t PROGMEM base_arrows_combo[] = {EMAIL, LOCK_COMPUTER, COMBO_END};
 const uint16_t PROGMEM prog_arrows_combo[] = {TODO_COMMENT, COMMENT_SEPARATOR, COMBO_END};
 const uint16_t PROGMEM git_arrows_combo[] = {GIT_STATUS, GIT_COMMIT_ALL, COMBO_END};
@@ -685,6 +709,8 @@ const uint16_t PROGMEM media_arrows_combo[] = {KC_MEDIA_NEXT_TRACK, KC_MEDIA_PRE
 
 combo_t key_combos[] = {
     COMBO(backlight_combo, BL_STEP),
+
+    COMBO(display_off_combo, DISPLAY_TOGGLE),
 
     COMBO(base_arrows_combo, ARROW_TOGGLE),
     COMBO(prog_arrows_combo, ARROW_TOGGLE),
