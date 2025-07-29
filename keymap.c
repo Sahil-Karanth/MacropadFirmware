@@ -218,7 +218,7 @@ void handleDateTodoComment(keyrecord_t *record) {
     if (record -> event.pressed) {
         send_string("// TODO (");
         tap_code16(KC_F12); // autohotkey bound to date
-        send_string(" ");
+        wait_ms(200);
         send_string("): ");
     }
 }
