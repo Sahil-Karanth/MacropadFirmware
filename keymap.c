@@ -217,9 +217,8 @@ void handleCommandRun(keyrecord_t *record, char *command_str) {
 void handleDateTodoComment(keyrecord_t *record) {
     if (record -> event.pressed) {
         send_string("// TODO (");
-        send_string(__DATE__);
+        tap_code16(KC_F12); // autohotkey bound to date
         send_string(" ");
-        send_string(__TIME__);
         send_string("): ");
     }
 }
@@ -427,7 +426,7 @@ void matrix_scan_user(void) {
 }
 
 void raw_hid_receive(uint8_t *data, uint8_t length) {
-    print("Raw HID data received\n");
+    // printf("Raw HID data received\n");
 
     if (!received_first_communication) {
         received_first_communication = true;
@@ -449,7 +448,7 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
 
     raw_hid_send(response, length);
 
-    print("Next raw HID request sent\n");
+    // printf("Next raw HID request sent\n");
 }
 
 // This function runs to update the OLED display

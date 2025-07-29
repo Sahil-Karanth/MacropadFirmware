@@ -73,11 +73,11 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
 
     // Validate input length
     if (length < 2) {
-        print("LOKI: Invalid data length\n");
+        // printf("LOKI: Invalid data length\n");
         return;
     }
     
-    print("RECEIVED ON LOKI\n");
+    // printf("RECEIVED ON LOKI\n");
     
     uint8_t layer_num = data[0];
     

@@ -428,7 +428,7 @@ void matrix_scan_user(void) {
 }
 
 void raw_hid_receive(uint8_t *data, uint8_t length) {
-    print("Raw HID data received\n");
+    // printf("Raw HID data received\n");
 
     if (!received_first_communication) {
         received_first_communication = true;
@@ -450,7 +450,7 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
 
     raw_hid_send(response, length);
 
-    print("Next raw HID request sent\n");
+    // printf("Next raw HID request sent\n");
 }
 
 // This function runs to update the OLED display
