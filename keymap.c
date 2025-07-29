@@ -231,14 +231,25 @@ void handleCommentSep(keyrecord_t *record) {
     }
 }
 
+
 void handleDoxygenComment(keyrecord_t *record) {
     if (record->event.pressed) {
-        send_string(" * @brief BRIEF\n");
-        send_string(" *\n");
-        send_string(" * DESCR\n");
-        send_string(" *\n");
-        send_string(" * @param PNAME PDESC\n");
-        send_string(" * @return RDESC\n");
+        SEND_STRING("/**" SS_TAP(X_ENTER)); // C comment but replace with triple quotes for python
+        tap_code(KC_ENTER);
+        tap_code(KC_UP);
+
+
+        SEND_STRING(" * \"brief BRIEF" SS_TAP(X_ENTER));
+        tap_code(KC_BSPC); // Remove auto-indent
+        SEND_STRING(" *" SS_TAP(X_ENTER));
+        tap_code(KC_BSPC);
+        SEND_STRING(" * DESCR" SS_TAP(X_ENTER));
+        tap_code(KC_BSPC);
+        SEND_STRING(" *" SS_TAP(X_ENTER));
+        tap_code(KC_BSPC);
+        SEND_STRING(" * \"param PNAME PDESC" SS_TAP(X_ENTER));
+        tap_code(KC_BSPC);
+        SEND_STRING(" * \"return RDESC");
     }
 }
 
