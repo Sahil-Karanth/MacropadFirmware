@@ -2,7 +2,8 @@ import sys
 import os
 
 # dummy standard outputs for .exe file
-sys.stderr = sys.stdout = open(os.devnull, 'wb')
+# sys.stderr = sys.stdout = open(os.devnull, 'wb')
+PRINT_ON = True
 
 from dotenv import load_dotenv
 import hid
@@ -42,12 +43,14 @@ SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback/"
 
 
+def debug_print(str):
+    if PRINT_ON:
+        print(str)
+
 class KeyboardManager:
     def __init__(self):
         self.keyboard_device = None
         self.keyboard_lock = Lock()
-        self.connection_attempts = 0
-        self.max_connection_attempts = 5
         self.last_connection_attempt = 0
         self.connection_retry_delay = 2.0  # seconds
         
@@ -65,40 +68,34 @@ class KeyboardManager:
             return None
             
         except Exception as e:
-            # print(f"Error finding keyboard interface: {e}")
+            debug_print(f"Error finding keyboard interface: {e}")
             return None
     
     def _connect_keyboard(self):
-        """Establish connection to keyboard"""
+        """Establish connection to keyboard with persistent retry"""
         current_time = time.time()
         
-        # Rate limit connection attempts
+        # Rate limit connection attempts but don't give up entirely
         if (current_time - self.last_connection_attempt) < self.connection_retry_delay:
             return False
             
         self.last_connection_attempt = current_time
         
-        if self.connection_attempts >= self.max_connection_attempts:
-            return False
-        
         try:
             keyboard_path = self._find_keyboard_interface()
             if not keyboard_path:
-                # print("Loki65 raw HID interface not found.")
-                self.connection_attempts += 1
+                debug_print("Loki65 keyboard raw HID interface not found.")
                 return False
             
             self.keyboard_device = hid.device()
             self.keyboard_device.open_path(keyboard_path)
             self.keyboard_device.set_nonblocking(1)  # Set non-blocking mode
             
-            # print("Successfully connected to Loki65 keyboard.")
-            self.connection_attempts = 0  # Reset on successful connection
+            debug_print("Successfully connected to Loki65 keyboard.")
             return True
             
         except Exception as e:
-            # print(f"Failed to connect to keyboard: {e}")
-            self.connection_attempts += 1
+            debug_print(f"Failed to connect to keyboard: {e}")
             if self.keyboard_device:
                 try:
                     self.keyboard_device.close()
@@ -121,35 +118,47 @@ class KeyboardManager:
             return False
     
     def send_layer_data(self, layer_data):
-        """Send layer data to keyboard with persistent connection"""
+        """Send layer data to keyboard with persistent connection and retry"""
         with self.keyboard_lock:
-            # Check if we need to establish/re-establish connection
-            if not self.keyboard_device or not self._is_keyboard_connected():
-                if not self._connect_keyboard():
-                    return False
+            # Try to connect/reconnect if needed
+            max_retries = 3
+            retry_count = 0
             
-            try:
-                # Prepare the report
-                report = [0x00] * (report_length + 1)
-                report[1] = layer_data
+            while retry_count < max_retries:
+                # Check if we need to establish/re-establish connection
+                if not self.keyboard_device or not self._is_keyboard_connected():
+                    if not self._connect_keyboard():
+                        retry_count += 1
+                        if retry_count < max_retries:
+                            debug_print(f"Keyboard connection attempt {retry_count} failed, retrying...")
+                            time.sleep(1)  # Brief pause before retry
+                        continue
                 
-                # Send the data
-                bytes_written = self.keyboard_device.write(bytes(report))
-                
-                if bytes_written > 0:
-                    # print(f"Successfully sent layer '{layer_data}' to Loki65 keyboard.")
-                    return True
-                else:
-                    # print("Failed to write data to keyboard")
+                try:
+                    # Prepare the report
+                    report = [0x00] * (report_length + 1)
+                    report[1] = layer_data
+                    
+                    # Send the data
+                    bytes_written = self.keyboard_device.write(bytes(report))
+                    
+                    if bytes_written > 0:
+                        debug_print(f"Successfully sent layer '{layer_data}' to Loki65 keyboard.")
+                        return True
+                    else:
+                        debug_print("Failed to write data to keyboard")
+                        # Connection might be broken, mark for reconnection
+                        self._disconnect_keyboard()
+                        retry_count += 1
+                        
+                except Exception as e:
+                    debug_print(f"Error sending data to keyboard: {e}")
                     # Connection might be broken, mark for reconnection
                     self._disconnect_keyboard()
-                    return False
-                    
-            except Exception as e:
-                # print(f"Error sending data to keyboard: {e}")
-                # Connection might be broken, mark for reconnection
-                self._disconnect_keyboard()
-                return False
+                    retry_count += 1
+            
+            debug_print(f"Failed to send layer data after {max_retries} attempts")
+            return False
     
     def _disconnect_keyboard(self):
         """Safely disconnect from keyboard"""
@@ -164,8 +173,7 @@ class KeyboardManager:
         """Cleanup keyboard connection"""
         with self.keyboard_lock:
             self._disconnect_keyboard()
-            # print("Keyboard connection cleaned up.")
-
+            debug_print("Keyboard connection cleaned up.")
 
 class NetworkSpeedTester:
     def __init__(self):
@@ -197,14 +205,14 @@ class NetworkSpeedTester:
             if not self.is_testing:  # Only reset if not currently testing
                 self.last_result = None
                 self.test_completion_time = None
-                # print("Network test results cleared")
+                debug_print("Network test results cleared")
                 return True
             return False
     
     def _run_test(self):
         """Run the actual speed test"""
         try:
-            # print("Starting network speed test...")
+            debug_print("Starting network speed test...")
             st = speedtest.Speedtest()
             
             # Perform the download speed test
@@ -218,10 +226,10 @@ class NetworkSpeedTester:
                 self.is_testing = False
                 self.test_completion_time = time.time()
                 
-            # print(f"Speed test completed: {download_speed}↓ {upload_speed}↑ Mbps")
+            debug_print(f"Speed test completed: {download_speed}↓ {upload_speed}↑ Mbps")
             
         except Exception as e:
-            # print(f"Speed test failed: {e}")
+            debug_print(f"Speed test failed: {e}")
             with self.lock:
                 self.last_result = None
                 self.is_testing = False
@@ -255,12 +263,12 @@ class SpotifyManager:
                     redirect_uri=SPOTIFY_REDIRECT_URI,
                     scope="user-read-playback-state user-read-currently-playing"
                 ))
-                # print("Spotify client initialized successfully")
+                debug_print("Spotify client initialized successfully")
             else:
-                # print("Spotify credentials not provided - add your client ID and secret")
+                debug_print("Spotify credentials not provided - add your client ID and secret")
                 pass
         except Exception as e:
-            # print(f"Failed to initialize Spotify client: {e}")
+            debug_print(f"Failed to initialize Spotify client: {e}")
             self.sp = None
     
     def get_current_song(self):
@@ -291,7 +299,7 @@ class SpotifyManager:
                 return None
                 
         except Exception as e:
-            # print(f"Error getting current song: {e}")
+            debug_print(f"Error getting current song: {e}")
             return None
 
 # Global instances
@@ -321,11 +329,11 @@ def get_report(data):
 
 def send_report_with_timeout(interface, request_report):
     if interface is None:
-        # print("No device found")
+        debug_print("No device found")
         return COULD_NOT_CONNECT
 
-    # print("Request:")
-    # print(request_report)
+    debug_print("Request:")
+    debug_print(request_report)
 
     try:
         interface.write(request_report)
@@ -333,15 +341,15 @@ def send_report_with_timeout(interface, request_report):
         response_report = interface.read(report_length, timeout_ms=1000)
 
         if response_report:
-            # print("Next service:")
-            # print(response_report)
+            debug_print("Next service:")
+            debug_print(response_report)
             pass
         else:
-            # print("No response received within timeout")
+            debug_print("No response received within timeout")
             pass
 
     except Exception as e:
-        # print(f"Communication error: {e}")
+        debug_print(f"Communication error: {e}")
         return COULD_NOT_CONNECT
 
     return response_report
@@ -352,7 +360,7 @@ def send_raw_hid_to_keyboard(data_to_send):
     """
     success = keyboard_manager.send_layer_data(data_to_send)
     if not success:
-        # print(f"Failed to send layer '{data_to_send}' to keyboard")
+        debug_print(f"Failed to send layer '{data_to_send}' to keyboard")
         pass
 
 def zero_pad(integer):
@@ -442,7 +450,7 @@ def hid_read_thread(interface):
         if report:
             if report[0] == RGB_SEND:
                 layer = report[1]
-                # print(f"Received RGB layer interrupt: {layer}")
+                debug_print(f"Received RGB layer interrupt: {layer}")
                 send_raw_hid_to_keyboard(layer)
 
         time.sleep(0.01)
@@ -453,7 +461,7 @@ def interface_connect():
     while interface is None:
         interface = get_raw_hid_interface()
         if interface is None:
-            # print("No device found. Retrying in 5 seconds...")
+            debug_print("No device found. Retrying in 5 seconds...")
             time.sleep(5)
     return interface
 
@@ -472,7 +480,7 @@ def main():
                 response_report = send_report_with_timeout(interface, request_report)
 
                 if response_report == COULD_NOT_CONNECT:
-                    # print("Lost connection. Attempting to reconnect...")
+                    debug_print("Lost connection. Attempting to reconnect...")
                     interface = interface_connect()                    
                     threading.Thread(target=hid_read_thread, args=(interface,), daemon=True).start()
                     request_report = get_report(get_pc_stats())
@@ -482,18 +490,18 @@ def main():
                 time.sleep(SERVICE_INTERVAL)
 
             except KeyboardInterrupt:
-                # print("\nShutting down...")
+                debug_print("\nShutting down...")
                 break
             except Exception as e:
-                # print(f"Error in main loop: {e}")
+                debug_print(f"Error in main loop: {e}")
                 time.sleep(5)
 
     finally:
         # Cleanup connections
-        # print("Cleaning up connections...")
+        debug_print("Cleaning up connections...")
         keyboard_manager.cleanup()
         interface.close()
-        # print("Cleanup complete.")
+        debug_print("Cleanup complete.")
 
 if __name__ == '__main__':
     main()
