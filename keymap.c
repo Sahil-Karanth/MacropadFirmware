@@ -202,7 +202,6 @@ void handleOpenVscode(keyrecord_t *record) {
         send_string("code");
         tap_code(KC_ENTER);
     }
-}
 
 void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly) {
     if (record->event.pressed) {
@@ -213,7 +212,7 @@ void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly) {
             tap_code(KC_NUHS); // UK # key
             send_string(" COMMIT TRACKED ONLY");
         } else {
-            send_string("git add . && git commit -m ''       ");
+            send_string("git add . && git commit -m ''          ");
             tap_code(KC_NUHS);
             send_string(" COMMIT ALL");
         }
@@ -258,7 +257,7 @@ void handleDoxygenComment(keyrecord_t *record) {
         tap_code(KC_UP);
 
 
-        SEND_STRING(" * \\brief BRIEF" SS_TAP(X_ENTER));
+        SEND_STRING(" * \"brief BRIEF" SS_TAP(X_ENTER));
         tap_code(KC_BSPC); // Remove auto-indent
         SEND_STRING(" *" SS_TAP(X_ENTER));
         tap_code(KC_BSPC);
@@ -266,9 +265,9 @@ void handleDoxygenComment(keyrecord_t *record) {
         tap_code(KC_BSPC);
         SEND_STRING(" *" SS_TAP(X_ENTER));
         tap_code(KC_BSPC);
-        SEND_STRING(" * \\param PNAME PDESC" SS_TAP(X_ENTER));
+        SEND_STRING(" * \"param PNAME PDESC" SS_TAP(X_ENTER));
         tap_code(KC_BSPC);
-        SEND_STRING(" * \\return RDESC");
+        SEND_STRING(" * \"return RDESC");
     }
 }
 
@@ -638,7 +637,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         }
         case EMAIL: {
             if (record->event.pressed) {
-                send_string("skkaranth1@gmail.com");
+                send_string("skkaranth1\"gmail.com");
             }
             return false;
         }
