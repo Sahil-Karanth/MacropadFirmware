@@ -2,8 +2,8 @@ import sys
 import os
 
 # dummy standard outputs for .exe file
-# sys.stderr = sys.stdout = open(os.devnull, 'wb')
-PRINT_ON = True
+sys.stderr = sys.stdout = open(os.devnull, 'wb')
+PRINT_ON = False
 
 from dotenv import load_dotenv
 import hid
@@ -42,7 +42,7 @@ COULD_NOT_CONNECT = -1
 SERVICE_INTERVAL = 1
 SONG_NAME_TRUNCATE = 20
 
-POMODORO_DURATION = 2 * 60 * 60
+POMODORO_DURATION = 60 * 60
 
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")

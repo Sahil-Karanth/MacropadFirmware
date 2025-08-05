@@ -202,6 +202,7 @@ void handleOpenVscode(keyrecord_t *record) {
         send_string("code");
         tap_code(KC_ENTER);
     }
+}
 
 void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly) {
     if (record->event.pressed) {
