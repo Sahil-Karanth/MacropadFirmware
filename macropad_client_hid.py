@@ -13,7 +13,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import time
 import threading
-from threading import Lock
+from threading import Lock, RLock
 
 load_dotenv()
 
@@ -23,8 +23,8 @@ macropad_product_id    = 0x9A25
 loki65_keyboard_vendor_id = 0x8968
 loki65_keyboard_product_id = 0x4C37
 
-usage_page    = 0xFF60
-usage         = 0x61
+usage_page      = 0xFF60
+usage           = 0x61
 
 report_length = 32
 
@@ -33,10 +33,16 @@ NETWORK_SPEED = 2
 CURRENT_SONG = 3
 RESET_NETWORK_TEST = 4
 RGB_SEND = 5
+TIMER_STATUS = 6
+TIMER_PAUSE_REQ = 7
+TIMER_RESTART_REQ = 8
+TIMER_RESET_REQ = 9
 COULD_NOT_CONNECT = -1
 
 SERVICE_INTERVAL = 1
 SONG_NAME_TRUNCATE = 20
+
+POMODORO_DURATION = 2 * 60 * 60
 
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
@@ -75,7 +81,6 @@ class KeyboardManager:
         """Establish connection to keyboard with persistent retry"""
         current_time = time.time()
         
-        # Rate limit connection attempts but don't give up entirely
         if (current_time - self.last_connection_attempt) < self.connection_retry_delay:
             return False
             
@@ -110,8 +115,6 @@ class KeyboardManager:
             return False
         
         try:
-            # Try a simple read operation to test connection
-            # This should return immediately due to non-blocking mode
             self.keyboard_device.read(1, timeout_ms=0)
             return True
         except Exception:
@@ -120,26 +123,22 @@ class KeyboardManager:
     def send_layer_data(self, layer_data):
         """Send layer data to keyboard with persistent connection and retry"""
         with self.keyboard_lock:
-            # Try to connect/reconnect if needed
             max_retries = 3
             retry_count = 0
             
             while retry_count < max_retries:
-                # Check if we need to establish/re-establish connection
                 if not self.keyboard_device or not self._is_keyboard_connected():
                     if not self._connect_keyboard():
                         retry_count += 1
                         if retry_count < max_retries:
                             debug_print(f"Keyboard connection attempt {retry_count} failed, retrying...")
-                            time.sleep(1)  # Brief pause before retry
+                            time.sleep(1)
                         continue
                 
                 try:
-                    # Prepare the report
                     report = [0x00] * (report_length + 1)
                     report[1] = layer_data
                     
-                    # Send the data
                     bytes_written = self.keyboard_device.write(bytes(report))
                     
                     if bytes_written > 0:
@@ -147,13 +146,11 @@ class KeyboardManager:
                         return True
                     else:
                         debug_print("Failed to write data to keyboard")
-                        # Connection might be broken, mark for reconnection
                         self._disconnect_keyboard()
                         retry_count += 1
                         
                 except Exception as e:
                     debug_print(f"Error sending data to keyboard: {e}")
-                    # Connection might be broken, mark for reconnection
                     self._disconnect_keyboard()
                     retry_count += 1
             
@@ -188,13 +185,12 @@ class NetworkSpeedTester:
         """Start network speed test in background thread"""
         with self.lock:
             if self.is_testing:
-                return  # Test already in progress
+                return
             
             self.is_testing = True
             self.test_start_time = time.time()
-            self.last_result = None  # Clear previous results
+            self.last_result = None
             
-        # Start test in background thread
         thread = threading.Thread(target=self._run_test)
         thread.daemon = True
         thread.start()
@@ -202,7 +198,7 @@ class NetworkSpeedTester:
     def reset_test(self):
         """Reset the network test state"""
         with self.lock:
-            if not self.is_testing:  # Only reset if not currently testing
+            if not self.is_testing:
                 self.last_result = None
                 self.test_completion_time = None
                 debug_print("Network test results cleared")
@@ -215,10 +211,8 @@ class NetworkSpeedTester:
             debug_print("Starting network speed test...")
             st = speedtest.Speedtest()
             
-            # Perform the download speed test
             download_speed = round(st.download() / 1000000, 1)
             
-            # Perform the upload speed test
             upload_speed = round(st.upload() / 1000000, 1)
             
             with self.lock:
@@ -244,7 +238,106 @@ class NetworkSpeedTester:
             elif self.last_result:
                 return "completed", 0, self.last_result
             else:
-                return "idle", 0, None          
+                return "idle", 0, None           
+
+class PomodoroTimer:
+    def __init__(self):
+        self.lock = RLock()
+        self.start_time = None
+        self.paused_time = None
+        self.total_paused_duration = 0
+        self.is_running = False
+        self.is_paused = False
+        self.is_completed = False
+        self.duration = POMODORO_DURATION
+        
+    def start(self):
+        """Start or resume the timer"""
+        with self.lock:
+            current_time = time.time()
+            
+            if self.is_paused:
+                # Resume from pause
+                self.total_paused_duration += current_time - self.paused_time
+                self.is_paused = False
+                self.paused_time = None
+                debug_print("Pomodoro timer resumed")
+            else:
+                # Start new timer
+                self.start_time = current_time
+                self.total_paused_duration = 0
+                self.is_completed = False
+                debug_print("Pomodoro timer started")
+            
+            self.is_running = True
+    
+    def pause(self):
+        """Pause the timer"""
+        with self.lock:
+            if self.is_running and not self.is_paused:
+                self.paused_time = time.time()
+                self.is_paused = True
+                self.is_running = False
+                debug_print("Pomodoro timer paused")
+                return True
+            return False
+    
+    def toggle_pause(self):
+        """Toggles the pause/resume state of the timer."""
+        with self.lock:
+            if self.is_completed or not self.start_time:
+                return
+            
+            if self.is_paused:
+                self.start()
+
+            elif self.is_running:
+                self.pause()
+
+    def reset(self):
+        """Reset the timer to initial state"""
+        with self.lock:
+            self.start_time = None
+            self.paused_time = None
+            self.total_paused_duration = 0
+            self.is_running = False
+            self.is_paused = False
+            self.is_completed = False
+            debug_print("Pomodoro timer reset")
+    
+    def get_status(self):
+        """Get current timer status and remaining time"""
+        with self.lock:
+            if not self.start_time:
+                return "STOPPED", "00:00:00"
+            
+            current_time = time.time()
+            
+            if self.is_paused:
+                elapsed_time = self.paused_time - self.start_time - self.total_paused_duration
+            else:
+                elapsed_time = current_time - self.start_time - self.total_paused_duration
+            
+            remaining_time = max(0, self.duration - elapsed_time)
+            
+            if remaining_time <= 0 and not self.is_completed:
+                self.is_completed = True
+                self.is_running = False
+                debug_print("Pomodoro timer completed!")
+            
+            hours = int(remaining_time // 3600)
+            minutes = int((remaining_time % 3600) // 60)
+            seconds = int(remaining_time % 60)
+            time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            
+            if self.is_completed:
+                return "COMPLETED", "00:00:00"
+            elif self.is_paused:
+                return "PAUSED", time_str
+            elif self.is_running:
+                return "RUNNING", time_str
+            else:
+                return "STOPPED", time_str
 
 class SpotifyManager:
     def __init__(self):
@@ -275,7 +368,6 @@ class SpotifyManager:
         """Get current playing song with caching"""
         current_time = time.time()
         
-        # Update every 10 seconds to avoid rate limiting
         if current_time - self.last_update_time < 10 and self.last_song_info:
             return self.last_song_info
         
@@ -287,7 +379,7 @@ class SpotifyManager:
             
             if current and current.get('is_playing'):
                 item = current['item']
-                song_name = item['name'][:40]  # Limit length for display
+                song_name = item['name'][:40]
                 artists = ', '.join([artist['name'] for artist in item['artists']])[:40]
                 
                 self.last_song_info = (song_name, artists)
@@ -306,6 +398,7 @@ class SpotifyManager:
 speed_tester = NetworkSpeedTester()
 spotify_manager = SpotifyManager()
 keyboard_manager = KeyboardManager()
+pomodoro_timer = PomodoroTimer()
 
 def get_raw_hid_interface():
     device_interfaces = hid.enumerate(macropad_vendor_id, macropad_product_id)
@@ -317,7 +410,6 @@ def get_raw_hid_interface():
     interface = hid.device()
     interface.open_path(raw_hid_interfaces[0]['path'])
     
-    # Set non-blocking mode or use a timeout
     interface.set_nonblocking(1)
     
     return interface
@@ -332,21 +424,14 @@ def send_report_with_timeout(interface, request_report):
         debug_print("No device found")
         return COULD_NOT_CONNECT
 
-    debug_print("Request:")
-    debug_print(request_report)
+    # This can be noisy, so you might want to comment it out for normal use
+    # debug_print("Request:")
+    # debug_print(request_report)
 
     try:
         interface.write(request_report)
 
         response_report = interface.read(report_length, timeout_ms=1000)
-
-        if response_report:
-            debug_print("Next service:")
-            debug_print(response_report)
-            pass
-        else:
-            debug_print("No response received within timeout")
-            pass
 
     except Exception as e:
         debug_print(f"Communication error: {e}")
@@ -402,17 +487,20 @@ def get_network_status():
     status, elapsed, result = speed_tester.get_status()
     
     if status == "testing":
-        # Show progress during test
         elapsed_str = f"{int(elapsed)}s"
         message = f"{NETWORK_SPEED}testing|{elapsed_str}"
     elif status == "completed" and result:
-        # Show results
         download, upload = result
         message = f"{NETWORK_SPEED}{download}|{upload}"
     else:
-        # No test data available
         message = f"{NETWORK_SPEED}--|--"
     
+    return message.encode('utf-8')
+
+def get_timer_status():
+    """Get current timer status and format for QMK"""
+    status, time_remaining = pomodoro_timer.get_status()
+    message = f"{TIMER_STATUS}{status}|{time_remaining}"
     return message.encode('utf-8')
 
 def interpret_response(request_report):
@@ -426,51 +514,64 @@ def interpret_response(request_report):
     elif request_type == NETWORK_SPEED:
         status, _, _ = speed_tester.get_status()
         
-        # Only start test if idle (no results yet)
         if status == "idle":
             speed_tester.start_test()
-        # If completed or testing, just return current status (don't restart)
         
         return get_report(get_network_status())
     elif request_type == RESET_NETWORK_TEST:
-        # Only reset on explicit request
         speed_tester.reset_test()
         speed_tester.start_test()
         return get_report(get_network_status())
     elif request_type == CURRENT_SONG:
         return get_report(get_song_info())
+    elif request_type == TIMER_STATUS:
+        return get_report(get_timer_status())
+    elif request_type == TIMER_PAUSE_REQ:
+        pomodoro_timer.toggle_pause()
+        return get_report(get_timer_status())
+    elif request_type == TIMER_RESTART_REQ:
+        pomodoro_timer.start()
+        return get_report(get_timer_status())
+    elif request_type == TIMER_RESET_REQ:
+        pomodoro_timer.reset()
+        return get_report(get_timer_status())
     else:
         # Unknown request, default to PC stats
         return get_report(get_pc_stats())
 
-# rgb to keyboard is an interrupt/separate thread
 def hid_read_thread(interface):
     while True:
-        report = interface.read(report_length, timeout_ms=100)
-        if report:
-            if report[0] == RGB_SEND:
-                layer = report[1]
-                debug_print(f"Received RGB layer interrupt: {layer}")
-                send_raw_hid_to_keyboard(layer)
-
+        try:
+            report = interface.read(report_length, timeout_ms=100)
+            if report:
+                if report[0] == RGB_SEND:
+                    layer = report[1]
+                    debug_print(f"Received RGB layer interrupt: {layer}")
+                    send_raw_hid_to_keyboard(layer)
+        except Exception:
+            # Handle cases where the device might get disconnected
+            return
         time.sleep(0.01)
 
 
 def interface_connect():
     interface = None
     while interface is None:
-        interface = get_raw_hid_interface()
-        if interface is None:
-            debug_print("No device found. Retrying in 5 seconds...")
+        try:
+            interface = get_raw_hid_interface()
+            if interface is None:
+                debug_print("No device found. Retrying in 5 seconds...")
+                time.sleep(5)
+        except Exception as e:
+            debug_print(f"Error during connection attempt: {e}")
             time.sleep(5)
     return interface
 
 def main():
-
     interface = interface_connect()
 
-    # Start thread for RGB interrupts
-    threading.Thread(target=hid_read_thread, args=(interface,), daemon=True).start()
+    read_thread = threading.Thread(target=hid_read_thread, args=(interface,), daemon=True)
+    read_thread.start()
 
     request_report = get_report(get_pc_stats())
 
@@ -481,8 +582,13 @@ def main():
 
                 if response_report == COULD_NOT_CONNECT:
                     debug_print("Lost connection. Attempting to reconnect...")
-                    interface = interface_connect()                    
-                    threading.Thread(target=hid_read_thread, args=(interface,), daemon=True).start()
+                    interface.close()
+                    interface = interface_connect()              
+                    
+                    if not read_thread.is_alive():
+                        read_thread = threading.Thread(target=hid_read_thread, args=(interface,), daemon=True)
+                        read_thread.start()
+                    
                     request_report = get_report(get_pc_stats())
                     continue
 
@@ -497,10 +603,10 @@ def main():
                 time.sleep(5)
 
     finally:
-        # Cleanup connections
         debug_print("Cleaning up connections...")
         keyboard_manager.cleanup()
-        interface.close()
+        if interface:
+            interface.close()
         debug_print("Cleanup complete.")
 
 if __name__ == '__main__':
