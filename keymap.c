@@ -32,6 +32,8 @@ char received_timer_info[HID_BUFFER_SIZE] = "--";
 
 static uint32_t pc_status_timer = 0;
 static uint32_t blink_timer = 0;
+static uint32_t conditional_timer_poll = 0; // for timer completion polling on other layers (when timer active)
+
 static bool blink_state = false;
 bool received_first_communication = false; // only build queue after we connect
 
@@ -46,12 +48,18 @@ enum layer_names {
     _ARROWS,
 };
 
+enum blink_colours_as_layer {
+    WHITE = _GIT,
+    GREEN = _MEDIA,
+};
+
 int curr_layer = _BASE;
 int return_layer = _BASE; // for arrow toggle
 int chosen_image = 0;
 
-bool display_enabled = true; // for toggling the oled
-bool timer_completed = false; // for timer completion blinking
+bool display_enabled = true;
+bool timer_completed = false;
+bool timer_active = false;
 
 enum custom_keycodes {
     LOCK_COMPUTER = SAFE_RANGE,
@@ -158,6 +166,19 @@ queue_t req_queue;
 // Helper Functions
 // -------------------------------------------------------------------------- //
 
+void send_rgb_to_keyboard(int data_to_send) {
+
+    if (received_first_communication) {
+        uint8_t rgb_send_buffer[HID_BUFFER_SIZE - 1];
+        memset(rgb_send_buffer, 0, HID_BUFFER_SIZE - 1);
+    
+        rgb_send_buffer[0] = RGB_SEND;
+        rgb_send_buffer[1] = data_to_send; // either layer number or the blinking colour
+    
+        raw_hid_send(rgb_send_buffer, HID_BUFFER_SIZE - 1);
+    }
+}
+
 int random_int_range(int min, int max){
    return min + rand() / (RAND_MAX / (max - min + 1) + 1);
 }
@@ -172,18 +193,10 @@ void cycleLayers(bool forward) {
     }
 
     // Reset timer completion state when switching layers
-    timer_completed = false;
+    // timer_completed = false;
 
     // send rgb to python client to forward to keyboard
-    if (received_first_communication) {
-        uint8_t rgb_send_buffer[HID_BUFFER_SIZE - 1];
-        memset(rgb_send_buffer, 0, HID_BUFFER_SIZE - 1);
-    
-        rgb_send_buffer[0] = RGB_SEND;
-        rgb_send_buffer[1] = curr_layer;
-    
-        raw_hid_send(rgb_send_buffer, HID_BUFFER_SIZE - 1);
-    }
+    send_rgb_to_keyboard(curr_layer);
 }
 
 
@@ -358,6 +371,7 @@ void categorise_received_data(void) {
             // Check if timer completed
             if (strstr(received_timer_info, "COMPLETED") != NULL) {
                 timer_completed = true;
+                timer_active = false;
                 blink_timer = timer_read32();
             } else {
                 timer_completed = false;
@@ -481,13 +495,15 @@ void keyboard_post_init_user(void) {
 
 void matrix_scan_user(void) {
     // Handle timer completion blinking
-    if (timer_completed && timer_elapsed32(blink_timer) > 500) {
+    if (timer_completed && timer_elapsed32(blink_timer) > 1000) {
         blink_timer = timer_read32();
         blink_state = !blink_state;
         if (blink_state) {
-            rgblight_sethsv(HSV_RED);
+            rgblight_sethsv(HSV_WHITE);
+            send_rgb_to_keyboard(WHITE);
         } else {
-            rgblight_sethsv(HSV_BLUE);
+            rgblight_sethsv(HSV_GREEN);
+            send_rgb_to_keyboard(GREEN);
         }
     }
 
@@ -504,6 +520,11 @@ void matrix_scan_user(void) {
         } else if (curr_layer == _POMODORO) {
             enqueue(&req_queue, TIMER_STATUS);
         }
+    }
+
+    if (timer_active && timer_elapsed32(conditional_timer_poll) > 3000) {
+        conditional_timer_poll = timer_read32();
+        enqueue(&req_queue, TIMER_STATUS);
     }
 }
 
@@ -712,6 +733,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             if (record->event.pressed) {
                 enqueue(&req_queue, TIMER_RESTART_REQ);
                 timer_completed = false;
+                timer_active = true;
             }
             return false;
         }
@@ -719,6 +741,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             if (record->event.pressed) {
                 enqueue(&req_queue, TIMER_RESET_REQ);
                 timer_completed = false;
+                timer_active = false;
             }
             return false;
         }

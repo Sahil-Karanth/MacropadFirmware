@@ -42,7 +42,7 @@ COULD_NOT_CONNECT = -1
 SERVICE_INTERVAL = 1
 SONG_NAME_TRUNCATE = 20
 
-POMODORO_DURATION = 60 * 60
+POMODORO_DURATION = 5
 
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
@@ -431,6 +431,8 @@ def send_report_with_timeout(interface, request_report):
         interface.write(request_report)
 
         response_report = interface.read(report_length, timeout_ms=1000)
+
+        debug_print(response_report)
 
     except Exception as e:
         debug_print(f"Communication error: {e}")
