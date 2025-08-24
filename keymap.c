@@ -522,7 +522,7 @@ void matrix_scan_user(void) {
         }
     }
 
-    if (timer_active && timer_elapsed32(conditional_timer_poll) > 3000) {
+    if (timer_active && timer_elapsed32(conditional_timer_poll) > 30000) {
         conditional_timer_poll = timer_read32();
         enqueue(&req_queue, TIMER_STATUS);
     }

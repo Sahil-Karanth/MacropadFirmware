@@ -42,7 +42,6 @@ COULD_NOT_CONNECT = -1
 SERVICE_INTERVAL = 1
 SONG_NAME_TRUNCATE = 20
 
-POMODORO_DURATION = 5
 
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
@@ -52,6 +51,15 @@ SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback/"
 def debug_print(str):
     if PRINT_ON:
         print(str)
+
+def load_pomodoro_time():
+    with open("pomodoro_duration.txt", "r") as file:
+        pomodoro_duration = int(file.read().strip())
+    return pomodoro_duration
+
+
+pomodoro_duration = load_pomodoro_time()
+
 
 class KeyboardManager:
     def __init__(self):
@@ -249,7 +257,7 @@ class PomodoroTimer:
         self.is_running = False
         self.is_paused = False
         self.is_completed = False
-        self.duration = POMODORO_DURATION
+        self.duration = load_pomodoro_time()
         
     def start(self):
         """Start or resume the timer"""
