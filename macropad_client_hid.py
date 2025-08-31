@@ -53,10 +53,12 @@ def debug_print(str):
         print(str)
 
 def load_pomodoro_time():
-    with open("pomodoro_duration.txt", "r") as file:
-        pomodoro_duration = int(file.read().strip())
-    return pomodoro_duration
-
+    try:
+        with open("pomodoro_duration.txt", "r") as file:
+            pomodoro_duration = int(file.read().strip())
+        return pomodoro_duration
+    except Exception as e:
+        debug_print("failed to load the pomodoro_duration.txt file")
 
 pomodoro_duration = load_pomodoro_time()
 
@@ -315,6 +317,7 @@ class PomodoroTimer:
     
     def get_status(self):
         """Get current timer status and remaining time"""
+        self.duration = load_pomodoro_time()
         with self.lock:
             if not self.start_time:
                 return "STOPPED", "00:00:00"

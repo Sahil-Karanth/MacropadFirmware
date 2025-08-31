@@ -484,6 +484,18 @@ void write_timer_info_oled(void) {
 // QMK Override Functions
 // -------------------------------------------------------------------------- //
 
+
+bool encoder_update_user(uint8_t index, bool clockwise) {
+    if (!clockwise) {
+        tap_code(KC_VOLU);
+    } else {
+        tap_code(KC_VOLD);
+    }
+
+    return false;
+}
+
+
 void keyboard_post_init_user(void) {
     initQueue(&req_queue);
 
@@ -495,7 +507,7 @@ void keyboard_post_init_user(void) {
 
 void matrix_scan_user(void) {
     // Handle timer completion blinking
-    if (timer_completed && timer_elapsed32(blink_timer) > 1000) {
+    if (timer_completed && timer_elapsed32(blink_timer) > 2000) {
         blink_timer = timer_read32();
         blink_state = !blink_state;
         if (blink_state) {
@@ -775,42 +787,42 @@ tap_dance_action_t tap_dance_actions[] = {
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_BASE] = LAYOUT(
-        KC_NO,  // Encoder button - no longer used since encoder is broken
+        KC_MEDIA_PLAY_PAUSE,
         TD(TD_LAYER_CYCLE),  // Up arrow: tap=cycle forward, double-tap=cycle back
         EMAIL, VSCODE_OPEN, LOCK_COMPUTER
     ),
     [_PROGRAMING] = LAYOUT(
-        KC_NO,
+        KC_MEDIA_PLAY_PAUSE,
         TD(TD_LAYER_CYCLE),
         TODO_COMMENT, DOXYGEN_COMMENT, COMMENT_SEPARATOR
     ),
     [_GIT] = LAYOUT(
-        KC_NO,
+        KC_MEDIA_PLAY_PAUSE,
         TD(TD_LAYER_CYCLE),
         GIT_STATUS, GIT_COMMIT_TRACKED, GIT_COMMIT_ALL
     ),
     [_MARKDOWN] = LAYOUT(
-        KC_NO,
+        KC_MEDIA_PLAY_PAUSE,
         TD(TD_LAYER_CYCLE),
         LATEX_BLOCK_INLINE, LATEX_BLOCK, CODE_BLOCK
     ),
     [_NETWORK] = LAYOUT(
-        KC_NO,
+        KC_MEDIA_PLAY_PAUSE,
         TD(TD_LAYER_CYCLE),
         KC_PGUP, REQUEST_RETEST_KEY, KC_PGDN
     ),
     [_MEDIA] = LAYOUT(
-        KC_NO,
+        KC_MEDIA_PLAY_PAUSE,
         TD(TD_LAYER_CYCLE),
         KC_MEDIA_NEXT_TRACK, KC_MEDIA_PLAY_PAUSE, KC_MEDIA_PREV_TRACK
     ),
     [_POMODORO] = LAYOUT(
-        KC_NO,
+        KC_MEDIA_PLAY_PAUSE,
         TD(TD_LAYER_CYCLE),
         TIMER_RESTART, TIMER_PAUSE, TIMER_RESET
     ),
     [_ARROWS] = LAYOUT(
-        ARROW_TOGGLE,
+        KC_MEDIA_PLAY_PAUSE,
         KC_UP,
         KC_RIGHT, KC_DOWN, KC_LEFT
     ),      
