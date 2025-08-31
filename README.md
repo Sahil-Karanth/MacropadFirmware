@@ -1,6 +1,6 @@
 # QMK Macropad with Advanced Python Client
 
-This project was originally built for the **ANAVI ARROWS** open-source macropad, but is designed to be highly adaptable. It enhances a QMK-powered macropad with a powerful Python client script that runs on your PC. This allows for advanced features that go beyond standard keyboard firmware capabilities, such as interacting with web APIs, monitoring system stats, and more, all controlled from your macropad.
+This project was originally built for the **ANAVI ARROWS** open-source macropad (by Leon Anavi), but is designed to be highly adaptable. It enhances a QMK-powered macropad with a powerful Python client script that runs on your PC. This allows for advanced features that go beyond standard keyboard firmware capabilities, such as interacting with web APIs, monitoring system stats, and more, all controlled from your macropad.
 
 > **General Compatibility Note:** While this guide uses the ANAVI Arrows as a reference, the firmware and client script will work on **any QMK-compatible macropad** with an OLED screen, provided you follow the configuration steps (like updating Device IDs).
 
