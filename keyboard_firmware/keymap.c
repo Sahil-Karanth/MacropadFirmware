@@ -73,21 +73,21 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
 
     // Validate input length
     if (length < 2) {
-        print("LOKI: Invalid data length\n");
+        print("KEYBOARD: Invalid data length\n");
         return;
     }
     
-    print("RECEIVED ON LOKI\n");
+    print("RECEIVED ON KEYBOARD\n");
     
     uint8_t layer_num = data[0];
     
     if (layer_num >= COLOUR_MAP_SIZE) {
-        printf("LOKI: Invalid layer %d (max: %d)\n", layer_num, COLOUR_MAP_SIZE - 1);
+        printf("KEYBOARD: Invalid layer %d (max: %d)\n", layer_num, COLOUR_MAP_SIZE - 1);
         return;
     }
     
     hsv_t colour_struct = colour_map[layer_num];
-    printf("LOKI: Setting RGB to layer %d\n", layer_num);
+    printf("KEYBOARD: Setting RGB to layer %d\n", layer_num);
     
     rgblight_sethsv(colour_struct.h, colour_struct.s, colour_struct.v);
 }
