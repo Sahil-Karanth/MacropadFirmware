@@ -1,3 +1,5 @@
+// old firmware from when I used to use the rotary encoder to layer cycle (kept in case I want to bring that functionality back)
+
 #include QMK_KEYBOARD_H
 #include <stdio.h>
 #include <stdlib.h>

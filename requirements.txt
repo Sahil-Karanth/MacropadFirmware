@@ -1,0 +1,5 @@
+psutil
+speedtest-cli
+spotipy
+python-dotenv
+hidapi
