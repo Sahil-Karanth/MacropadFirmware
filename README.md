@@ -8,6 +8,8 @@ The Python script is designed to be fault-tolerant, automatically handling disco
 
 View images and videos of the project at: https://sahil-karanth.github.io/Portfolio/macropad.html
 
+Please note, the keymap.c file is the one that will be compiled by QMK MSYS to build the .u2f file. So to use the keymap_nvim.c file (which replaces the git layer with an nvim layer) you have to make this called keymap.c.
+
 ## Features
 
 - **Multiple Macro Layers:** Quickly switch between different modes for various tasks, including layers for general use, programming, Git commands, and Markdown formatting.
