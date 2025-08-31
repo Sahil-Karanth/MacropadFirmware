@@ -1,5 +1,3 @@
-// FIRMWARE WITHOUT ROTARY ENCODER
-
 #include QMK_KEYBOARD_H
 #include <stdio.h>
 #include <stdlib.h>

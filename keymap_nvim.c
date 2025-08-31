@@ -1,4 +1,4 @@
-// old firmware from when I used to use the rotary encoder to layer cycle (kept in case I want to bring that functionality back)
+// same as keymap.c but replace the git layer with neovim stuff 
 
 #include QMK_KEYBOARD_H
 #include <stdio.h>
@@ -17,33 +17,49 @@
 // Declarations and Globals
 // -------------------------------------------------------------------------- //
 
-#define NUM_LAYERS_TO_CYCLE 6
+#define NUM_LAYERS_TO_CYCLE 7
 #define HID_BUFFER_SIZE 33
-#define NUM_SCREEN_LINES 6
+
+#define NUM_SCREEN_LINES 8
+#define SCREEN_CHAR_WIDTH 20
 
 // Globals for Raw HID communication
 char received_data[HID_BUFFER_SIZE] = "--";
 char received_pc_stats[HID_BUFFER_SIZE] = "--";
 char received_network_stats[HID_BUFFER_SIZE] = "--";
 char received_song_info[HID_BUFFER_SIZE] = "--";
+char received_timer_info[HID_BUFFER_SIZE] = "--";
 
-// volatile bool has_new_data = false;
 static uint32_t pc_status_timer = 0;
+static uint32_t blink_timer = 0;
+static uint32_t conditional_timer_poll = 0; // for timer completion polling on other layers (when timer active)
+
+static bool blink_state = false;
 bool received_first_communication = false; // only build queue after we connect
 
 enum layer_names {
     _BASE,
     _PROGRAMING,
-    _GIT,
+    _NVIM,
     _MARKDOWN,
     _NETWORK,
     _MEDIA,
+    _POMODORO,
     _ARROWS,
+};
+
+enum blink_colours_as_layer {
+    WHITE = _NVIM,
+    GREEN = _MEDIA,
 };
 
 int curr_layer = _BASE;
 int return_layer = _BASE; // for arrow toggle
 int chosen_image = 0;
+
+bool display_enabled = true;
+bool timer_completed = false;
+bool timer_active = false;
 
 enum custom_keycodes {
     LOCK_COMPUTER = SAFE_RANGE,
@@ -52,16 +68,23 @@ enum custom_keycodes {
     COMMENT_SEPARATOR,
     DOXYGEN_COMMENT,
     TODO_COMMENT,
-    GIT_COMMIT_ALL,
-    GIT_COMMIT_TRACKED,
-    GIT_STATUS,
-    GIT_LOG,
     REQUEST_RETEST_KEY,
     ARROW_TOGGLE,
     SNIPPING_TOOL,
     CODE_BLOCK,
     LATEX_BLOCK,
     LATEX_BLOCK_INLINE,
+    DISPLAY_TOGGLE,
+    TIMER_PAUSE,
+    TIMER_RESTART,
+    TIMER_RESET,
+    NVIM_FIND_AND_REPLACE,
+    CLOSE_NVIM_BUFFERS,
+    OPEN_LUA_INIT,
+};
+
+enum tap_dance_codes {
+    TD_LAYER_CYCLE,
 };
 
 // -------------------------------------------------------------------------- //
@@ -74,6 +97,10 @@ enum PC_req_types {
     CURRENT_SONG = 3,
     REQUEST_RETEST = 4,
     RGB_SEND = 5,
+    TIMER_STATUS = 6,
+    TIMER_PAUSE_REQ = 7,
+    TIMER_RESTART_REQ = 8,
+    TIMER_RESET_REQ = 9,
 };
 
 #define MAX_QUEUE_SIZE 100
@@ -91,7 +118,6 @@ int enqueue(queue_t *q, int value);
 int dequeue(queue_t *q, int *value);
 void cycleLayers(bool forward);
 void handleOpenVscode(keyrecord_t *record);
-void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly);
 void handleCommandRun(keyrecord_t *record, char *command_str);
 void handleCommentSep(keyrecord_t *record);
 void handleDoxygenComment(keyrecord_t *record);
@@ -101,11 +127,11 @@ void categorise_received_data(void);
 void write_pc_status_oled(void);
 void write_network_oled(void);
 void write_song_info_oled(void);
+void write_timer_info_oled(void);
 
 // -------------------------------------------------------------------------- //
 // LIFO queue
 // -------------------------------------------------------------------------- //
-
 
 void initQueue(queue_t *q) {
     q->size = 0;
@@ -119,7 +145,6 @@ int isEmpty(queue_t *q) {
     return q->size == 0;
 }
 
-// Push onto the stack (top is at size - 1)
 int enqueue(queue_t *q, int value) {
     if (isFull(q)) return 0;
     q->data[q->size++] = value;
@@ -133,12 +158,24 @@ int dequeue(queue_t *q, int *value) {
     return 1;
 }
 
-// the request queue (initially empty)
 queue_t req_queue;
 
 // -------------------------------------------------------------------------- //
 // Helper Functions
 // -------------------------------------------------------------------------- //
+
+void send_rgb_to_keyboard(int data_to_send) {
+
+    if (received_first_communication) {
+        uint8_t rgb_send_buffer[HID_BUFFER_SIZE - 1];
+        memset(rgb_send_buffer, 0, HID_BUFFER_SIZE - 1);
+    
+        rgb_send_buffer[0] = RGB_SEND;
+        rgb_send_buffer[1] = data_to_send; // either layer number or the blinking colour
+    
+        raw_hid_send(rgb_send_buffer, HID_BUFFER_SIZE - 1);
+    }
+}
 
 int random_int_range(int min, int max){
    return min + rand() / (RAND_MAX / (max - min + 1) + 1);
@@ -153,17 +190,58 @@ void cycleLayers(bool forward) {
         layer_move(curr_layer);
     }
 
+    // Reset timer completion state when switching layers
+    // timer_completed = false;
+
     // send rgb to python client to forward to keyboard
-    if (received_first_communication) {
-        uint8_t rgb_send_buffer[HID_BUFFER_SIZE - 1];
-        memset(rgb_send_buffer, 0, HID_BUFFER_SIZE - 1);
-    
-        rgb_send_buffer[0] = RGB_SEND;
-        rgb_send_buffer[1] = curr_layer;
-    
-        raw_hid_send(rgb_send_buffer, HID_BUFFER_SIZE - 1);
+    send_rgb_to_keyboard(curr_layer);
+}
+
+
+void layerCycleTapDance(tap_dance_state_t *state, void *user_data) {
+    if (state->count == 1) {
+        cycleLayers(true);
+    } else if (state->count == 2) {
+        cycleLayers(false);
     }
 }
+
+
+void handleNvimBufferClose(keyrecord_t *record) {
+
+  if (record->event.pressed) {
+    tap_code16(LSFT(KC_SEMICOLON));
+    tap_code16(LSFT(KC_5));
+    tap_code(KC_B);
+    tap_code(KC_D);
+    tap_code16(LSFT(KC_NUBS));
+    tap_code(KC_E);
+    tap_code(KC_NUHS);
+  }
+}
+
+void handleNvimReplace(keyrecord_t *record) {
+
+  if (record->event.pressed) {
+    tap_code16(KC_COLON);
+    SEND_STRING("%s///g");
+    for (int i = 0; i < 3; i++) {
+      tap_code16(KC_LEFT);
+    }
+  }
+}
+
+void handleOpenLuaInit(keyrecord_t *record) {
+
+  if (record->event.pressed) {
+        tap_code16(LSFT(KC_SEMICOLON));
+        tap_code(KC_E);
+        tap_code(KC_SPC);
+        tap_code16(LSFT(KC_NUHS));
+        SEND_STRING("/.config/nvim/init.lua");
+  }
+}
+
 
 void handleOpenVscode(keyrecord_t *record) {
     if (record->event.pressed) {
@@ -171,26 +249,6 @@ void handleOpenVscode(keyrecord_t *record) {
         wait_ms(100);
         send_string("code");
         tap_code(KC_ENTER);
-    }
-}
-
-void handleGitCommit(keyrecord_t *record, bool commitTrackedOnly) {
-    if (record->event.pressed) {
-        tap_code16(LCTL(KC_GRAVE));
-        wait_ms(100);
-        if (commitTrackedOnly) {
-            send_string("git commit -am '' ");
-            tap_code(KC_NUHS); // UK # key
-            send_string(" COMMIT TRACKED ONLY");
-        } else {
-            send_string("git add . && git commit -m ''       ");
-            tap_code(KC_NUHS);
-            send_string(" COMMIT ALL");
-        }
-        wait_ms(100);
-        for (int i = 0; i < 23; i++) {
-            tap_code(KC_LEFT);
-        }
     }
 }
 
@@ -206,9 +264,8 @@ void handleCommandRun(keyrecord_t *record, char *command_str) {
 void handleDateTodoComment(keyrecord_t *record) {
     if (record -> event.pressed) {
         send_string("// TODO (");
-        send_string(__DATE__);
-        send_string(" ");
-        send_string(__TIME__);
+        tap_code16(KC_F12); // autohotkey bound to date
+        wait_ms(200);
         send_string("): ");
     }
 }
@@ -221,14 +278,25 @@ void handleCommentSep(keyrecord_t *record) {
     }
 }
 
+
 void handleDoxygenComment(keyrecord_t *record) {
     if (record->event.pressed) {
-        send_string(" * @brief BRIEF\n");
-        send_string(" *\n");
-        send_string(" * DESCR\n");
-        send_string(" *\n");
-        send_string(" * @param PNAME PDESC\n");
-        send_string(" * @return RDESC\n");
+        SEND_STRING("/**" SS_TAP(X_ENTER)); // C comment but replace with triple quotes for python
+        tap_code(KC_ENTER);
+        tap_code(KC_UP);
+
+
+        SEND_STRING(" * \"brief BRIEF" SS_TAP(X_ENTER));
+        tap_code(KC_BSPC); // Remove auto-indent
+        SEND_STRING(" *" SS_TAP(X_ENTER));
+        tap_code(KC_BSPC);
+        SEND_STRING(" * DESCR" SS_TAP(X_ENTER));
+        tap_code(KC_BSPC);
+        SEND_STRING(" *" SS_TAP(X_ENTER));
+        tap_code(KC_BSPC);
+        SEND_STRING(" * \"param PNAME PDESC" SS_TAP(X_ENTER));
+        tap_code(KC_BSPC);
+        SEND_STRING(" * \"return RDESC");
     }
 }
 
@@ -246,6 +314,14 @@ void handleArrowToggle(keyrecord_t *record) {
         } else {
             curr_layer = return_layer;
         }
+        layer_move(curr_layer);
+    }
+}
+
+void handleExitArrows(keyrecord_t *record) {
+
+    if (record -> event.pressed) {
+        curr_layer = return_layer;
         layer_move(curr_layer);
     }
 }
@@ -305,6 +381,17 @@ void categorise_received_data(void) {
         case CURRENT_SONG:
             copy_buffer((uint8_t*)(received_data + 1), received_song_info);
             break;
+        case TIMER_STATUS:
+            copy_buffer((uint8_t*)(received_data + 1), received_timer_info);
+            // Check if timer completed
+            if (strstr(received_timer_info, "COMPLETED") != NULL) {
+                timer_completed = true;
+                timer_active = false;
+                blink_timer = timer_read32();
+            } else {
+                timer_completed = false;
+            }
+            break;
     }
 }
 
@@ -338,11 +425,11 @@ void write_network_oled(void) {
         // Check if it's a test in progress
         if (strstr(download, "testing") != NULL) {
             snprintf(network_display, sizeof(network_display), 
-                    "Testing... %s", upload);
+                     "Testing... %s", upload);
         } else if (strcmp(download, "--") != 0 && strcmp(upload, "--") != 0) {
             // We have actual results
             snprintf(network_display, sizeof(network_display), 
-                    "Download: %s Mbps\nUpload: %s Mbps", download, upload);
+                     "Download: %s Mbps\nUpload: %s Mbps", download, upload);
         } else {
             strcpy(network_display, "No data available");
         }
@@ -356,6 +443,7 @@ void write_song_info_oled(void) {
     // First, check if the data from the host is the default "no data" message.
     if (strcmp(received_song_info, "--") == 0 || strcmp(received_song_info, "--|--") == 0) {
         oled_write_ln("No song playing", false);
+        oled_write_ln("", false);
         return;
     }
 
@@ -367,24 +455,61 @@ void write_song_info_oled(void) {
 
     // Check if parsing was successful and gave us a valid song title.
     if (strlen(song_name) > 0) {
+
         oled_write_ln(song_name, false);
         oled_write_ln(artist_name, false);
+
     } else {
         oled_write_ln("No song playing", false);
+        oled_write_ln("", false);
     }
 }
 
-void oled_full_clear(void) {
-    oled_set_cursor(0, 0);
-    for (int i = 0; i < NUM_SCREEN_LINES; i++) {
+void write_timer_info_oled(void) {
+    // Check if we have received timer data
+    if (strcmp(received_timer_info, "--") == 0) {
+        oled_write_ln("Timer not started", false);
         oled_write_ln("", false);
+        return;
     }
-    oled_set_cursor(0, 0);
+
+    char status[16] = "";
+    char time_remaining[16] = "";
+
+    // Parse the "status|time" string received from client
+    sscanf(received_timer_info, "%15[^|]|%15s", status, time_remaining);
+
+    if (strcmp(status, "COMPLETED") == 0) {
+        oled_write_ln("TIMER FINISHED!", false);
+    } else if (strcmp(status, "PAUSED") == 0) {
+        oled_write_ln("Timer PAUSED", false);
+        oled_write_ln(time_remaining, false);
+    } else if (strcmp(status, "RUNNING") == 0) {
+        oled_write_ln(time_remaining, false);
+    } else {
+        // handles the "STOPPED" state and any other initial states
+        oled_write_ln("Timer Ready", false);
+    }
+
+    oled_write_ln("", false);
 }
+
 
 // -------------------------------------------------------------------------- //
 // QMK Override Functions
 // -------------------------------------------------------------------------- //
+
+
+bool encoder_update_user(uint8_t index, bool clockwise) {
+    if (!clockwise) {
+        tap_code(KC_VOLU);
+    } else {
+        tap_code(KC_VOLD);
+    }
+
+    return false;
+}
+
 
 void keyboard_post_init_user(void) {
     initQueue(&req_queue);
@@ -395,26 +520,20 @@ void keyboard_post_init_user(void) {
     rgblight_sethsv(HSV_RED);
 }
 
-
-#define ENCODER_LAYER_SKIP 2
-bool encoder_update_user(uint8_t index, bool clockwise) {
-    static uint8_t encoder_tick = 0;
-
-    encoder_tick++;
-    if (encoder_tick % ENCODER_LAYER_SKIP != 0) {
-        return false;
-    }
-
-    if (!clockwise) {
-        cycleLayers(true);
-    } else {
-        cycleLayers(false);
-    }
-
-    return false;
-}
-
 void matrix_scan_user(void) {
+    // Handle timer completion blinking
+    if (timer_completed && timer_elapsed32(blink_timer) > 2000) {
+        blink_timer = timer_read32();
+        blink_state = !blink_state;
+        if (blink_state) {
+            rgblight_sethsv(HSV_WHITE);
+            send_rgb_to_keyboard(WHITE);
+        } else {
+            rgblight_sethsv(HSV_GREEN);
+            send_rgb_to_keyboard(GREEN);
+        }
+    }
+
     // Check if 2 seconds have passed since the last request
     if (timer_elapsed32(pc_status_timer) > 2000 && received_first_communication) {
         // Reset the timer
@@ -425,7 +544,14 @@ void matrix_scan_user(void) {
             enqueue(&req_queue, NETWORK_TEST);
         } else if (curr_layer == _MEDIA) {
             enqueue(&req_queue, CURRENT_SONG);
+        } else if (curr_layer == _POMODORO) {
+            enqueue(&req_queue, TIMER_STATUS);
         }
+    }
+
+    if (timer_active && timer_elapsed32(conditional_timer_poll) > 30000) {
+        conditional_timer_poll = timer_read32();
+        enqueue(&req_queue, TIMER_STATUS);
     }
 }
 
@@ -452,11 +578,18 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
 
     raw_hid_send(response, length);
 
-    // printf("Next raw HID request sent\n");
 }
 
 // This function runs to update the OLED display
 bool oled_task_user(void) {
+
+    if (display_enabled) {
+        oled_on();
+    } else {
+        oled_off();
+        return false;
+    }
+
     static int last_layer = -1;
     
     if (last_layer != curr_layer) {
@@ -466,7 +599,7 @@ bool oled_task_user(void) {
 
     switch (curr_layer) {
         case _BASE:
-            rgblight_sethsv(HSV_RED);
+            if (!timer_completed) rgblight_sethsv(HSV_RED);
             oled_write_ln("Home Layer", false);
             oled_write_ln("", false);
             oled_write_ln("< lock computer", false);
@@ -476,7 +609,7 @@ bool oled_task_user(void) {
             write_pc_status_oled();
             break;
         case _PROGRAMING:
-            rgblight_sethsv(HSV_BLUE);
+            if (!timer_completed) rgblight_sethsv(HSV_BLUE);
             oled_write_ln("Programming Layer", false);
             oled_write_ln("", false);
             oled_write_ln("< comment separator", false);
@@ -485,18 +618,18 @@ bool oled_task_user(void) {
             oled_write_ln("", false);
             write_pc_status_oled();
             break;
-        case _GIT:
-            rgblight_sethsv(HSV_WHITE);
-            oled_write_ln("Git Layer", false);
+        case _NVIM:
+            if (!timer_completed) rgblight_sethsv(HSV_WHITE);
+            oled_write_ln("Nvim Layer", false);
             oled_write_ln("", false);
-            oled_write_ln("< commit all", false);
-            oled_write_ln("v commit tracked", false);
-            oled_write_ln("> git status", false);
+            oled_write_ln("< open init.lua", false);
+            oled_write_ln("v delete buffers", false);
+            oled_write_ln("> find and replace", false);
             oled_write_ln("", false);
             write_pc_status_oled();
             break;
         case _MARKDOWN:
-            rgblight_sethsv(HSV_PURPLE);
+            if (!timer_completed) rgblight_sethsv(HSV_PURPLE);
             oled_write_ln("Markdown Layer", false);
             oled_write_ln("", false);
             oled_write_ln("< code block", false);
@@ -506,7 +639,7 @@ bool oled_task_user(void) {
             write_pc_status_oled();
             break;
         case _NETWORK:
-            rgblight_sethsv(HSV_YELLOW);
+            if (!timer_completed) rgblight_sethsv(HSV_YELLOW);
             oled_write_ln("Internet Speed", false);
             oled_write_ln("", false);
             oled_write_ln("'v' to retest", false);
@@ -514,14 +647,23 @@ bool oled_task_user(void) {
             write_network_oled();
             break;
         case _MEDIA:
-            rgblight_sethsv(HSV_GREEN);
+            if (!timer_completed) rgblight_sethsv(HSV_GREEN);
             oled_write_ln("Media Player", false);
             oled_write_ln("", false);
             oled_write_ln("", false);
             write_song_info_oled();
             break;
+        case _POMODORO:
+            if (!timer_completed) rgblight_sethsv(HSV_ORANGE);
+            oled_write_ln("Pomodoro Timer", false);
+            oled_write_ln("", false);
+            oled_write_ln("< reset | v pause", false);
+            oled_write_ln("> start/restart", false);
+            oled_write_ln("", false);
+            write_timer_info_oled();
+            break;
         case _ARROWS:
-            rgblight_sethsv(HSV_CYAN);
+            if (!timer_completed) rgblight_sethsv(HSV_CYAN);
             oled_write_ln("Arrow Layer", false);
             oled_write_ln("", false);
             oled_write_raw_P((const char *)bitmaps_arr[chosen_image], BITMAP_SIZE);
@@ -548,21 +690,17 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
-        // Git macros
-        case GIT_COMMIT_ALL: {
-            handleGitCommit(record, false);
+        // Nvim macros
+        case OPEN_LUA_INIT: {
+            handleOpenLuaInit(record);
             return false;
         }
-        case GIT_COMMIT_TRACKED: {
-            handleGitCommit(record, true);
+        case CLOSE_NVIM_BUFFERS: {
+            handleNvimBufferClose(record);
             return false;
         }
-        case GIT_STATUS: {
-            handleCommandRun(record, "git status");
-            return false;
-        }
-        case GIT_LOG: {
-            handleCommandRun(record, "git log");
+        case NVIM_FIND_AND_REPLACE: {
+            handleNvimReplace(record);
             return false;
         }
         // Programming macros
@@ -607,10 +745,52 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             }
             return false;
         }
+        // Timer macros
+        case TIMER_PAUSE: {
+            if (record->event.pressed) {
+                enqueue(&req_queue, TIMER_PAUSE_REQ);
+            }
+            return false;
+        }
+        case TIMER_RESTART: {
+            if (record->event.pressed) {
+                enqueue(&req_queue, TIMER_RESTART_REQ);
+                timer_completed = false;
+                timer_active = true;
+            }
+            return false;
+        }
+        case TIMER_RESET: {
+            if (record->event.pressed) {
+                enqueue(&req_queue, TIMER_RESET_REQ);
+                timer_completed = false;
+                timer_active = false;
+            }
+            return false;
+        }
+        case DISPLAY_TOGGLE: {
+            if (record->event.pressed) {
+                display_enabled = !display_enabled;
+                if (display_enabled) {
+                    rgblight_enable();
+                } else {
+                    rgblight_disable();
+                }
+            }
+            return false;
+        }
     }
 
     return true;
 }
+
+// -------------------------------------------------------------------------- //
+// Tap Dance Configuration
+// -------------------------------------------------------------------------- //
+
+tap_dance_action_t tap_dance_actions[] = {
+    [TD_LAYER_CYCLE] = ACTION_TAP_DANCE_FN(layerCycleTapDance),
+};
 
 // -------------------------------------------------------------------------- //
 // Macropad Layout
@@ -618,44 +798,89 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [_BASE] = LAYOUT(
-        ARROW_TOGGLE,
-        SNIPPING_TOOL,
+        KC_MEDIA_PLAY_PAUSE,
+        TD(TD_LAYER_CYCLE),  // Up arrow: tap=cycle forward, double-tap=cycle back
         EMAIL, VSCODE_OPEN, LOCK_COMPUTER
     ),
     [_PROGRAMING] = LAYOUT(
-        ARROW_TOGGLE,
-        SNIPPING_TOOL,
+        KC_MEDIA_PLAY_PAUSE,
+        TD(TD_LAYER_CYCLE),
         TODO_COMMENT, DOXYGEN_COMMENT, COMMENT_SEPARATOR
     ),
-    [_GIT] = LAYOUT(
-        ARROW_TOGGLE,
-        GIT_LOG,
-        GIT_STATUS, GIT_COMMIT_TRACKED, GIT_COMMIT_ALL
+    [_NVIM] = LAYOUT(
+        KC_MEDIA_PLAY_PAUSE,
+        TD(TD_LAYER_CYCLE),
+        NVIM_FIND_AND_REPLACE, CLOSE_NVIM_BUFFERS, OPEN_LUA_INIT
     ),
     [_MARKDOWN] = LAYOUT(
-        ARROW_TOGGLE,
-        SNIPPING_TOOL,
+        KC_MEDIA_PLAY_PAUSE,
+        TD(TD_LAYER_CYCLE),
         LATEX_BLOCK_INLINE, LATEX_BLOCK, CODE_BLOCK
     ),
     [_NETWORK] = LAYOUT(
-        ARROW_TOGGLE,
-        SNIPPING_TOOL,
-        KC_NO, REQUEST_RETEST_KEY, KC_NO
+        KC_MEDIA_PLAY_PAUSE,
+        TD(TD_LAYER_CYCLE),
+        KC_PGUP, REQUEST_RETEST_KEY, KC_PGDN
     ),
     [_MEDIA] = LAYOUT(
-        ARROW_TOGGLE,
-        SNIPPING_TOOL,
+        KC_MEDIA_PLAY_PAUSE,
+        TD(TD_LAYER_CYCLE),
         KC_MEDIA_NEXT_TRACK, KC_MEDIA_PLAY_PAUSE, KC_MEDIA_PREV_TRACK
     ),
+    [_POMODORO] = LAYOUT(
+        KC_MEDIA_PLAY_PAUSE,
+        TD(TD_LAYER_CYCLE),
+        TIMER_RESTART, TIMER_PAUSE, TIMER_RESET
+    ),
     [_ARROWS] = LAYOUT(
-        ARROW_TOGGLE,
+        KC_MEDIA_PLAY_PAUSE,
         KC_UP,
         KC_RIGHT, KC_DOWN, KC_LEFT
-    ),    
+    ),      
 };
+
+// -------------------------------------------------------------------------- //
+// Combo Keys
+// -------------------------------------------------------------------------- //
 
 const uint16_t PROGMEM backlight_combo[] = {KC_UP, KC_DOWN, COMBO_END};
-combo_t key_combos[] = {
-    COMBO(backlight_combo, BL_STEP)
-};
 
+const uint16_t PROGMEM home_display_off_combo[] = {TD(TD_LAYER_CYCLE), VSCODE_OPEN, COMBO_END};
+const uint16_t PROGMEM prog_display_off_combo[] = {TD(TD_LAYER_CYCLE), DOXYGEN_COMMENT, COMBO_END};
+const uint16_t PROGMEM nvim_display_off_combo[] = {TD(TD_LAYER_CYCLE), CLOSE_NVIM_BUFFERS, COMBO_END};
+const uint16_t PROGMEM markdown_display_off_combo[] = {TD(TD_LAYER_CYCLE), LATEX_BLOCK, COMBO_END};
+const uint16_t PROGMEM media_display_off_combo[] = {TD(TD_LAYER_CYCLE), KC_MEDIA_PLAY_PAUSE, COMBO_END};
+const uint16_t PROGMEM network_display_off_combo[] = {TD(TD_LAYER_CYCLE), REQUEST_RETEST_KEY, COMBO_END};
+const uint16_t PROGMEM pomodoro_display_off_combo[] = {TD(TD_LAYER_CYCLE), TIMER_PAUSE, COMBO_END};
+
+
+const uint16_t PROGMEM base_arrows_combo[] = {EMAIL, LOCK_COMPUTER, COMBO_END};
+const uint16_t PROGMEM prog_arrows_combo[] = {TODO_COMMENT, COMMENT_SEPARATOR, COMBO_END};
+const uint16_t PROGMEM nvim_arrows_combo[] = {OPEN_LUA_INIT, NVIM_FIND_AND_REPLACE, COMBO_END};
+const uint16_t PROGMEM markdown_arrows_combo[] = {LATEX_BLOCK_INLINE, CODE_BLOCK, COMBO_END};
+const uint16_t PROGMEM normal_arrows_combo[] = {KC_LEFT, KC_RIGHT, COMBO_END};
+const uint16_t PROGMEM media_arrows_combo[] = {KC_MEDIA_NEXT_TRACK, KC_MEDIA_PREV_TRACK, COMBO_END};
+const uint16_t PROGMEM network_arrows_combo[] = {KC_PGUP, KC_PGDN, COMBO_END};
+const uint16_t PROGMEM pomodoro_arrows_combo[] = {TIMER_RESET, TIMER_RESTART, COMBO_END};
+
+
+combo_t key_combos[] = {
+    COMBO(backlight_combo, BL_STEP),
+
+    COMBO(home_display_off_combo, DISPLAY_TOGGLE),
+    COMBO(prog_display_off_combo, DISPLAY_TOGGLE),
+    COMBO(nvim_display_off_combo, DISPLAY_TOGGLE),
+    COMBO(markdown_display_off_combo, DISPLAY_TOGGLE),
+    COMBO(media_display_off_combo, DISPLAY_TOGGLE),
+    COMBO(network_display_off_combo, DISPLAY_TOGGLE),
+    COMBO(pomodoro_display_off_combo, DISPLAY_TOGGLE),
+    
+    COMBO(base_arrows_combo, ARROW_TOGGLE),
+    COMBO(prog_arrows_combo, ARROW_TOGGLE),
+    COMBO(nvim_arrows_combo, ARROW_TOGGLE),
+    COMBO(markdown_arrows_combo, ARROW_TOGGLE),
+    COMBO(normal_arrows_combo, ARROW_TOGGLE),
+    COMBO(media_arrows_combo, ARROW_TOGGLE),
+    COMBO(network_arrows_combo, ARROW_TOGGLE),
+    COMBO(pomodoro_arrows_combo, ARROW_TOGGLE),
+};
